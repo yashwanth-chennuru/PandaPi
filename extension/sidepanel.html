@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PandaPi</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <span>PandaPi</span>
+      </div>
+      <div class="top-actions">
+        <button id="newChat" class="icon-btn" title="New chat">+</button>
+      </div>
+    </header>
+
+    <section class="chat-head">
+      <div class="chat-title">Chat</div>
+      <div class="mode-line">
+        Browser only
+        <span id="statusDot" class="dot dim" title="Host status"></span>
+      </div>
+    </section>
+
+    <main id="log" class="log">
+      <div class="empty" id="empty">
+        <p>Pi drives this window. No files, no shell — tabs and pages only.</p>
+        <div class="chips">
+          <button class="chip" data-prompt="Summarize this page">Summarize this page</button>
+          <button class="chip" data-prompt="Take a screenshot of this tab">Take a screenshot</button>
+          <button class="chip" data-prompt="Open a new tab">Open a new tab</button>
+        </div>
+      </div>
+    </main>
+
+    <div id="shotWrap" class="shot-wrap hidden">
+      <img id="shot" alt="Latest screenshot" />
+      <button id="clearShot" class="icon-btn tiny" title="Hide screenshot">×</button>
+    </div>
+
+    <footer class="composer">
+      <div id="tabCard" class="tab-card hidden">
+        <img id="tabFav" alt="" />
+        <div class="tab-meta">
+          <div id="tabTitle" class="tab-title"></div>
+          <div id="tabUrl" class="tab-url"></div>
+        </div>
+        <button id="detachTab" class="icon-btn tiny" title="Detach page context">×</button>
+      </div>
+      <textarea id="input" rows="2" placeholder="Ask a question about this page, or tell PandaPi what to do."></textarea>
+      <div class="toolbar">
+        <button id="abort" class="icon-btn" title="Stop" disabled>■</button>
+        <select id="model" title="Model from your Pi setup"></select>
+        <button id="send" class="send" title="Send">↑</button>
+      </div>
+      <p id="banner" class="banner hidden"></p>
+    </footer>
+    <script src="sidepanel.js" type="module"></script>
+  </body>
+</html>
