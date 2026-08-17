@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const hostPath = path.join(root, "scripts", "pandapi-host.sh");
 const extensionId = "kdocghhgibkeiaojckijeocmppbealaa";
+const bunBin = process.execPath.includes("bun")
+  ? process.execPath
+  : Bun.which("bun") || "bun";
 
 const manifest = {
   name: "com.pandapi.host",
@@ -36,11 +39,10 @@ fs.mkdirSync(path.dirname(hostPath), { recursive: true });
 const launcher = `#!/usr/bin/env bash
 set -euo pipefail
 ROOT="${root}"
+BUN="${bunBin}"
 cd "$ROOT"
-if [[ -x "$ROOT/node_modules/.bin/tsx" ]]; then
-  exec "$ROOT/node_modules/.bin/tsx" "$ROOT/host/src/index.ts"
-fi
-exec node "$ROOT/dist/index.js"
+export PATH="$(dirname "$BUN"):$PATH"
+exec "$BUN" "$ROOT/host/src/index.ts"
 `;
 fs.writeFileSync(hostPath, launcher, { mode: 0o755 });
 
@@ -55,6 +57,7 @@ for (const dir of dirs) {
 
 console.log(`
 PandaPi native host installed (${wrote} browser path(s)).
+Host runtime: ${bunBin}
 
 Next:
   1. Brave → brave://extensions → Developer mode
@@ -65,5 +68,5 @@ Next:
 Optional Stagehand (this window only, no new profile):
   Start Brave with remote debugging, then:
   export PANDAPI_CDP_URL=http://127.0.0.1:9222
-  Re-run npm run install-host so the host process picks it up.
+  Re-run bun run install-host so the host process picks it up.
 `);
