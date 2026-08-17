@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { createPiController } from "./pi-session.js";
 import {
   createNativeDecoder,

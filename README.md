@@ -15,15 +15,17 @@ You already use Pi in the terminal. This is the same keys and models, with a cha
 ## Requirements
 
 - Desktop Brave (or Chrome). No mobile.
-- Node 20+
-- Pi CLI already working (`npm i -g @earendil-works/pi-coding-agent`) with a cloud provider key
+- [Bun](https://bun.sh) 1.2+ (`curl -fsSL https://bun.sh/install | bash`)
+- Pi CLI already working with a cloud provider key in `~/.pi/agent`
+
+The side panel is still a normal MV3 extension (the browser cannot run Bun). Bun replaces Node for install, tests, and the native host that embeds Pi.
 
 ## Install
 
 ```bash
 git clone <this-repo> && cd PandaPi
-npm install
-npm run install-host
+bun install
+bun run install-host
 ```
 
 Then in Brave:
@@ -50,7 +52,7 @@ If `PANDAPI_CDP_URL` is unset, those tools fall back to snapshot/click. That is 
 
 ```
 This Brave window
-  side panel  →  extension service worker  →  native host (Node)
+  side panel  →  extension service worker  →  native host (Bun)
                                               Pi createAgentSession()
                                               browser tools only
                                               ↻ browser_request / browser_result
@@ -61,6 +63,6 @@ The host is `com.pandapi.host`. Tool calls never run `bash`, `read`, or `write`.
 ## Tests
 
 ```bash
-npm test
-npm run build
+bun test
+bun run typecheck
 ```
