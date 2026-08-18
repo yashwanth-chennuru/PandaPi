@@ -68,5 +68,5 @@ Next:
 Optional Stagehand (this window only, no new profile):
   Start Brave with remote debugging, then:
   export PANDAPI_CDP_URL=http://127.0.0.1:9222
-  Re-run bun run install-host so the host process picks it up.
+  Re-run bun run setup-host so the host process picks it up.
 `);

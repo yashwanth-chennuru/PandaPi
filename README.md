@@ -25,7 +25,7 @@ The side panel is still a normal MV3 extension (the browser cannot run Bun). Bun
 ```bash
 git clone <this-repo> && cd PandaPi
 bun install
-bun run install-host
+bun run setup-host
 ```
 
 Then in Brave:
@@ -35,7 +35,7 @@ Then in Brave:
    The packed ID is pinned to `kdocghhgibkeiaojckijeocmppbealaa` so native messaging can find it.
 3. Click the PandaPi icon (opens the side panel)
 
-If the panel says the native host is missing, `install-host` did not land a manifest in Brave’s `NativeMessagingHosts` directory. Re-run it and fully quit Brave.
+If the panel says the native host is missing, `setup-host` did not land a manifest in Brave’s `NativeMessagingHosts` directory. Re-run it and fully quit Brave.
 
 ## Optional Stagehand (same window)
 

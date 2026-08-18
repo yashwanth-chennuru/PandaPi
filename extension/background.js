@@ -49,7 +49,7 @@ function connectNative() {
     broadcast({
       type: "host_error",
       message: err
-        ? `Native host disconnected: ${err}. Run npm run install-host in the PandaPi repo.`
+        ? `Native host disconnected: ${err}. Run bun run setup-host in the PandaPi repo.`
         : "Native host disconnected.",
     });
   });
@@ -74,7 +74,7 @@ chrome.runtime.onConnect.addListener((port) => {
     if (!nativePort) {
       port.postMessage({
         type: "host_error",
-        message: "Could not start native host. Run npm run install-host.",
+        message: "Could not start native host. Run bun run setup-host.",
       });
       return;
     }
