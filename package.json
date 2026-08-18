@@ -8,7 +8,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test host/src/protocol.test.ts",
-    "setup-host": "bun scripts/install-native-host.mjs"
+    "setup-host": "bun ./scripts/install-native-host.mjs"
   },
   "engines": {
     "bun": ">=1.2.0"

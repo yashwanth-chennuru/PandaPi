@@ -25,7 +25,8 @@ The side panel is still a normal MV3 extension (the browser cannot run Bun). Bun
 ```bash
 git clone <this-repo> && cd PandaPi
 bun install
-bun run setup-host
+bun ./scripts/install-native-host.mjs
+# after PR #2 is merged you can also: bun run setup-host
 ```
 
 Then in Brave:
