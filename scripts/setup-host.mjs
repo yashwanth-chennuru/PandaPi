@@ -19,7 +19,7 @@ const manifest = {
   allowed_origins: [`chrome-extension://${extensionId}/`],
 };
 
-const dirs: string[] = [];
+const dirs = [];
 if (process.platform === "darwin") {
   dirs.push(
     path.join(os.homedir(), "Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"),
