@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PandaPi</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <span>PandaPi</span>
+      </div>
+      <div class="top-actions">
+        <button id="openSettings" class="icon-btn" title="Settings">⚙</button>
+        <button id="newChat" class="icon-btn" title="New chat">+</button>
+      </div>
+    </header>
+
+    <section class="chat-head">
+      <div class="chat-title">Chat</div>
+      <div class="mode-line">
+        This window only
+        <span id="statusDot" class="dot dim" title="Host status"></span>
+      </div>
+    </section>
+
+    <main id="log" class="log">
+      <div class="empty" id="empty">
+        <p>A browser-use agent for the tab you are looking at. Snapshots go to your cloud LLM. Nothing else leaves this machine.</p>
+        <div class="chips">
+          <button class="chip" data-prompt="Summarize this page">Summarize this page</button>
+          <button class="chip" data-prompt="Take a screenshot of this tab">Take a screenshot</button>
+          <button class="chip" data-prompt="Extract the key facts from this page as a short list">Extract key facts</button>
+        </div>
+      </div>
+    </main>
+
+    <div id="shotWrap" class="shot-wrap hidden">
+      <img id="shot" alt="Latest screenshot" />
+      <button id="clearShot" class="icon-btn tiny" title="Hide screenshot">×</button>
+    </div>
+
+    <div id="approval" class="approval hidden">
+      <p id="approvalText"></p>
+      <div class="approval-actions">
+        <button id="approvalDeny" type="button">Deny</button>
+        <button id="approvalAllow" type="button">Approve</button>
+      </div>
+    </div>
+
+    <section id="settings" class="settings hidden">
+      <h2>LLM (OpenAI-compatible)</h2>
+      <p class="hint">Stored in ~/.pandapi on this computer. Isolated from the Pi CLI (~/.pi).</p>
+      <label>
+        Base URL
+        <input id="cfgBase" type="url" placeholder="https://api.openai.com/v1" autocomplete="off" />
+      </label>
+      <label>
+        API key
+        <input id="cfgKey" type="password" placeholder="sk-…" autocomplete="off" />
+      </label>
+      <label>
+        Model id
+        <input id="cfgModel" type="text" placeholder="gpt-4.1" autocomplete="off" />
+      </label>
+      <p id="cfgHint" class="hint"></p>
+      <button id="saveSettings" type="button" class="save">Save</button>
+    </section>
+
+    <footer class="composer">
+      <div id="tabCard" class="tab-card hidden">
+        <img id="tabFav" alt="" />
+        <div class="tab-meta">
+          <div id="tabTitle" class="tab-title"></div>
+          <div id="tabUrl" class="tab-url"></div>
+        </div>
+        <button id="detachTab" class="icon-btn tiny" title="Detach page context">×</button>
+      </div>
+      <textarea id="input" rows="2" placeholder="Ask about this page, or tell PandaPi what to do."></textarea>
+      <div class="toolbar">
+        <button id="abort" class="icon-btn" title="Stop" disabled>■</button>
+        <select id="model" title="Model"></select>
+        <button id="send" class="send" title="Send">↑</button>
+      </div>
+      <p id="banner" class="banner hidden"></p>
+    </footer>
+    <script src="sidepanel.js" type="module"></script>
+  </body>
+</html>

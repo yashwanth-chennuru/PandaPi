@@ -1,0 +1,238 @@
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  ModelRuntime,
+  SessionManager,
+  SettingsManager,
+  type AgentSession,
+} from "@earendil-works/pi-coding-agent";
+import { BROWSER_SYSTEM_PROMPT, BROWSER_TOOL_NAMES, createBrowserTools, type ApprovalFn, type BrowserBridge } from "./browser-tools.js";
+import {
+  pandapiHome,
+  modelsPath,
+  authPath,
+  ensureHome,
+  seedFromEnv,
+  writeLlmConfig,
+  readLlmConfig,
+  publicConfig,
+  PROVIDER_ID,
+  type LlmConfig,
+} from "./config.js";
+import type { AgentEvent, PublicLlm, TabContext } from "./protocol.js";
+
+export type PiController = {
+  models: Array<{ provider: string; id: string; name?: string }>;
+  model: { provider: string; id: string } | null;
+  llm: PublicLlm;
+  warning?: string;
+  prompt: (id: string, text: string, tab: TabContext | null, emit: (e: AgentEvent) => void) => Promise<void>;
+  abort: () => Promise<void>;
+  newSession: () => Promise<void>;
+  setModel: (provider: string, modelId: string) => Promise<void>;
+  setConfig: (baseUrl: string, apiKey: string, modelId: string) => Promise<void>;
+  dispose: () => Promise<void>;
+};
+
+function eventText(event: { type: string; [k: string]: unknown }): AgentEvent | null {
+  if (event.type === "message_update") {
+    const inner = event.assistantMessageEvent as { type?: string; delta?: string } | undefined;
+    if (inner?.type === "text_delta" && inner.delta) {
+      return { type: "text_delta", text: inner.delta };
+    }
+  }
+  if (event.type === "tool_execution_start") {
+    return {
+      type: "tool_start",
+      name: String(event.toolName ?? event.name ?? "tool"),
+      detail: event.args ? JSON.stringify(event.args).slice(0, 300) : undefined,
+    };
+  }
+  if (event.type === "tool_call") {
+    return { type: "tool_start", name: String(event.toolName ?? "tool") };
+  }
+  if (event.type === "tool_execution_end" || event.type === "tool_result") {
+    return { type: "tool_end", name: String(event.toolName ?? event.name ?? "tool") };
+  }
+  if (event.type === "agent_end") return { type: "done" };
+  if (event.type === "error" || event.type === "agent_error") {
+    return { type: "error", message: String(event.error ?? event.message ?? "Agent error") };
+  }
+  return null;
+}
+
+export async function createPiController(opts: {
+  bridge: BrowserBridge;
+  requestApproval: ApprovalFn;
+}): Promise<PiController> {
+  const { bridge, requestApproval } = opts;
+  const home = ensureHome(pandapiHome());
+  let cfg = seedFromEnv(home) ?? readLlmConfig(home);
+
+  let modelRuntime = await ModelRuntime.create({
+    authPath: authPath(home),
+    modelsPath: modelsPath(home),
+  });
+
+  let available = await modelRuntime.getAvailable();
+  const summarize = () =>
+    available.map((m) => ({
+      provider: m.provider,
+      id: m.id,
+      name: (m as { name?: string }).name,
+    }));
+
+  let models = summarize();
+  let warning: string | undefined;
+  if (models.length === 0) {
+    warning =
+      "No LLM key yet. Open Settings in this panel and add an OpenAI-compatible base URL + API key. Keys stay in ~/.pandapi, not ~/.pi.";
+  }
+
+  let currentTab: TabContext | null = null;
+  let snapshotItems: Array<{ ref: string; name?: string; role?: string }> = [];
+
+  const tools = createBrowserTools({
+    getTab: () => currentTab,
+    bridge,
+    requestApproval,
+    getSnapshotItems: () => snapshotItems,
+    setSnapshotItems: (items) => {
+      snapshotItems = items;
+    },
+  });
+
+  const settingsManager = SettingsManager.inMemory({
+    compaction: { enabled: true },
+  });
+
+  const loader = new DefaultResourceLoader({
+    cwd: home,
+    agentDir: home,
+    settingsManager,
+    systemPromptOverride: () => BROWSER_SYSTEM_PROMPT,
+    skillsOverride: () => ({ skills: [], diagnostics: [] }),
+    agentsFilesOverride: () => ({ agentsFiles: [] }),
+    extensionFactories: [],
+  } as ConstructorParameters<typeof DefaultResourceLoader>[0]);
+  await loader.reload();
+
+  let session: AgentSession | undefined;
+  let unsubscribe: (() => void) | undefined;
+  let emitCurrent: ((e: AgentEvent) => void) | undefined;
+
+  const pickModel = () => {
+    if (cfg) {
+      return modelRuntime.getModel(PROVIDER_ID, cfg.modelId) ?? available[0];
+    }
+    return available[0];
+  };
+
+  async function rebuildSession() {
+    unsubscribe?.();
+    session?.dispose();
+    available = await modelRuntime.getAvailable();
+    models = summarize();
+    const model = pickModel();
+    if (!model) {
+      session = undefined;
+      return;
+    }
+    const result = await createAgentSession({
+      cwd: home,
+      agentDir: home,
+      model,
+      modelRuntime,
+      thinkingLevel: "off",
+      noTools: "builtin",
+      tools: [...BROWSER_TOOL_NAMES],
+      excludeTools: ["bash", "read", "write", "edit", "grep", "find", "ls", "powershell"],
+      customTools: tools,
+      resourceLoader: loader,
+      sessionManager: SessionManager.inMemory(),
+      settingsManager,
+    });
+    session = result.session;
+    unsubscribe = session.subscribe((event) => {
+      const mapped = eventText(event as unknown as { type: string; [k: string]: unknown });
+      if (mapped) emitCurrent?.(mapped);
+    });
+  }
+
+  await rebuildSession();
+
+  return {
+    get models() {
+      return models;
+    },
+    get model() {
+      const m = session?.model ?? pickModel();
+      return m ? { provider: m.provider, id: m.id } : null;
+    },
+    get llm() {
+      return publicConfig(cfg);
+    },
+    get warning() {
+      return warning;
+    },
+    async prompt(id, text, tab, emit) {
+      if (!session) {
+        emit({ type: "error", message: warning ?? "Pi session is not ready. Add an API key in Settings." });
+        emit({ type: "done" });
+        return;
+      }
+      currentTab = tab;
+      emitCurrent = emit;
+      const prefix = tab
+        ? `[Attached tab ${tab.tabId}] ${tab.title}\n${tab.url}\n\n`
+        : "[No attached tab]\n\n";
+      try {
+        await session.prompt(prefix + text);
+      } catch (err) {
+        emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        emit({ type: "done" });
+        emitCurrent = undefined;
+      }
+    },
+    async abort() {
+      await session?.abort();
+    },
+    async newSession() {
+      await rebuildSession();
+    },
+    async setModel(provider, modelId) {
+      const model =
+        modelRuntime.getModel(provider, modelId) ?? available.find((m) => m.provider === provider && m.id === modelId);
+      if (!model) throw new Error(`Unknown model ${provider}/${modelId}`);
+      if (cfg && provider === PROVIDER_ID) {
+        cfg = { ...cfg, modelId };
+        writeLlmConfig(cfg, home);
+      }
+      if (session) await session.setModel(model);
+      else await rebuildSession();
+    },
+    async setConfig(baseUrl, apiKey, modelId) {
+      const prev = readLlmConfig(home);
+      const next: LlmConfig = {
+        providerId: PROVIDER_ID,
+        baseUrl: baseUrl.trim() || prev?.baseUrl || "https://api.openai.com/v1",
+        apiKey: apiKey.trim() || prev?.apiKey || "",
+        modelId: modelId.trim() || prev?.modelId || "gpt-4.1",
+      };
+      if (!next.apiKey) throw new Error("API key is required.");
+      writeLlmConfig(next, home);
+      cfg = next;
+      modelRuntime = await ModelRuntime.create({
+        authPath: authPath(home),
+        modelsPath: modelsPath(home),
+      });
+      warning = undefined;
+      await rebuildSession();
+    },
+    async dispose() {
+      unsubscribe?.();
+      session?.dispose();
+    },
+  };
+}
