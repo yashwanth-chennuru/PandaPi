@@ -36,10 +36,13 @@ export type PiController = {
 
 function eventText(event: { type: string; [k: string]: unknown }): AgentEvent | null {
   if (event.type === "message_update") {
-    const inner = event.assistantMessageEvent as { type?: string; delta?: string } | undefined;
-    if (inner?.type === "text_delta" && inner.delta) {
-      return { type: "text_delta", text: inner.delta };
-    }
+    const inner = event.assistantMessageEvent as {
+      type?: string;
+      delta?: string;
+      text?: string;
+    } | undefined;
+    const delta = inner?.delta || (inner?.type === "text" ? inner.text : undefined);
+    if (delta) return { type: "text_delta", text: delta };
   }
   if (event.type === "tool_execution_start") {
     return {
@@ -53,6 +56,12 @@ function eventText(event: { type: string; [k: string]: unknown }): AgentEvent | 
   }
   if (event.type === "tool_execution_end" || event.type === "tool_result") {
     return { type: "tool_end", name: String(event.toolName ?? event.name ?? "tool") };
+  }
+  if (event.type === "auto_retry_start") {
+    return {
+      type: "error",
+      message: `Retrying LLM (${String(event.attempt)}/${String(event.maxAttempts)}): ${String(event.errorMessage ?? "")}`,
+    };
   }
   if (event.type === "agent_end") return { type: "done" };
   if (event.type === "error" || event.type === "agent_error") {

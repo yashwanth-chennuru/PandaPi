@@ -4,6 +4,7 @@ const HOST = "com.pandapi.host";
 
 let nativePort = null;
 const panelPorts = new Set();
+let reconnectTimer = null;
 
 function broadcast(msg) {
   for (const p of panelPorts) {
@@ -15,18 +16,8 @@ function broadcast(msg) {
   }
 }
 
-function connectNative() {
-  if (nativePort) {
-    nativePort.postMessage({ type: "hello" });
-    return nativePort;
-  }
-  try {
-    nativePort = chrome.runtime.connectNative(HOST);
-  } catch (err) {
-    broadcast({ type: "host_error", message: String(err) });
-    return null;
-  }
-  nativePort.onMessage.addListener(async (msg) => {
+function attachNativeListeners(port) {
+  port.onMessage.addListener(async (msg) => {
     if (msg?.type === "browser_request") {
       try {
         const result = await handleBrowserMethod(msg.method, msg.params || {});
@@ -46,17 +37,56 @@ function connectNative() {
     }
     broadcast(msg);
   });
-  nativePort.onDisconnect.addListener(() => {
+  port.onDisconnect.addListener(() => {
     const err = chrome.runtime.lastError?.message;
     nativePort = null;
     broadcast({
       type: "host_error",
       message: err
-        ? `Native host disconnected: ${err}. Run bun run setup-host in the PandaPi repo.`
-        : "Native host disconnected.",
+        ? `Native host disconnected: ${err}. Run bun run setup-host, then reload this unpacked extension.`
+        : "Native host disconnected. Reload the extension or run bun run setup-host.",
     });
+    if (panelPorts.size && !reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectNative(true);
+      }, 750);
+    }
   });
-  nativePort.postMessage({ type: "hello" });
+}
+
+function connectNative(force = false) {
+  if (nativePort && !force) {
+    try {
+      nativePort.postMessage({ type: "hello" });
+      return nativePort;
+    } catch {
+      nativePort = null;
+    }
+  }
+  if (force && nativePort) {
+    try {
+      nativePort.disconnect();
+    } catch {
+      /* already gone */
+    }
+    nativePort = null;
+  }
+  try {
+    nativePort = chrome.runtime.connectNative(HOST);
+  } catch (err) {
+    broadcast({ type: "host_error", message: String(err) });
+    return null;
+  }
+  attachNativeListeners(nativePort);
+  try {
+    nativePort.postMessage({ type: "hello" });
+  } catch (err) {
+    broadcast({
+      type: "host_error",
+      message: `Could not talk to native host: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
   return nativePort;
 }
 
@@ -73,15 +103,31 @@ chrome.runtime.onConnect.addListener((port) => {
   panelPorts.add(port);
   connectNative();
   port.onMessage.addListener((msg) => {
+    if (msg?.type === "reconnect_host") {
+      connectNative(true);
+      return;
+    }
     if (!nativePort) connectNative();
     if (!nativePort) {
       port.postMessage({
         type: "host_error",
-        message: "Could not start native host. Run bun run setup-host.",
+        message: "Could not start native host. Run bun run setup-host, then reload the unpacked extension.",
       });
       return;
     }
-    nativePort.postMessage(msg);
+    try {
+      nativePort.postMessage(msg);
+    } catch {
+      connectNative(true);
+      try {
+        nativePort?.postMessage(msg);
+      } catch (err) {
+        port.postMessage({
+          type: "host_error",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   });
   port.onDisconnect.addListener(() => panelPorts.delete(port));
 });

@@ -20,12 +20,22 @@ const cfgKey = document.getElementById("cfgKey");
 const cfgModel = document.getElementById("cfgModel");
 const cfgHint = document.getElementById("cfgHint");
 
+const hostStatus = document.getElementById("hostStatus");
+
 let port = null;
 let attachedTab = null;
 let streaming = false;
 let promptId = 0;
 let currentAgentEl = null;
 let pendingApprovalId = null;
+let live = false;
+let piReady = false;
+let helloTimer = null;
+let promptWatch = null;
+
+function setHostStatus(text) {
+  hostStatus.textContent = text;
+}
 
 function showBanner(text, danger = false) {
   banner.textContent = text || "";
@@ -34,6 +44,7 @@ function showBanner(text, danger = false) {
 }
 
 function setLive(ok) {
+  live = Boolean(ok);
   statusDot.classList.toggle("dim", !ok);
 }
 
@@ -51,20 +62,37 @@ function fillSettings(llm) {
   }
 }
 
+function armHello() {
+  clearTimeout(helloTimer);
+  helloTimer = setTimeout(() => {
+    if (live) return;
+    showBanner("Local host did not answer. Reloading it… run bun run setup-host if this repeats.", true);
+    setHostStatus("Host not connected");
+    port?.postMessage({ type: "reconnect_host" });
+    setTimeout(() => port?.postMessage({ type: "hello" }), 400);
+  }, 4000);
+}
+
 function connect() {
   port = chrome.runtime.connect({ name: "pandapi-panel" });
   port.onMessage.addListener(onHost);
   port.onDisconnect.addListener(() => {
     port = null;
     setLive(false);
+    piReady = false;
+    setHostStatus("Disconnected");
     showBanner("Disconnected from the extension worker.", true);
     setTimeout(connect, 500);
   });
   port.postMessage({ type: "hello" });
+  armHello();
 }
 
 function applyHello(msg) {
+  clearTimeout(helloTimer);
   setLive(true);
+  piReady = Boolean(msg.piReady || msg.model);
+  setHostStatus(piReady ? "This window only" : "Host up — add a model in Settings");
   modelEl.replaceChildren();
   for (const m of msg.models || []) {
     const opt = document.createElement("option");
@@ -96,7 +124,10 @@ function onHost(msg) {
   }
   if (msg.type === "hello_error" || msg.type === "host_error") {
     setLive(false);
+    piReady = false;
+    setHostStatus("Host error");
     showBanner(msg.message, true);
+    appendLine(msg.message, "error");
     return;
   }
   if (msg.type === "screenshot" && msg.dataUrl) {
@@ -146,6 +177,43 @@ function finishPrompt() {
   currentAgentEl = null;
   sendBtn.disabled = false;
   abortBtn.disabled = true;
+  clearTimeout(promptWatch);
+}
+
+function sendPrompt(text) {
+  const trimmed = text.trim();
+  if (!trimmed || streaming) return;
+  if (!live || !port) {
+    appendLine(
+      "Local host is not connected (grey dot). In the repo run: bun run setup-host — then on brave://extensions click Reload on PandaPi.",
+      "error",
+    );
+    return;
+  }
+  if (!piReady) {
+    appendLine("No model is loaded. Open Settings, Save (leave the key blank to keep the saved one), and wait until the dropdown shows a model.", "error");
+    return;
+  }
+  streaming = true;
+  currentAgentEl = null;
+  sendBtn.disabled = true;
+  abortBtn.disabled = false;
+  appendLine(trimmed, "user");
+  input.value = "";
+  const id = `p${++promptId}`;
+  port.postMessage({
+    type: "prompt",
+    id,
+    text: trimmed,
+    tab: attachedTab,
+  });
+  clearTimeout(promptWatch);
+  promptWatch = setTimeout(() => {
+    if (!streaming) return;
+    appendLine("No reply from the host after 20s. Reloading the native host…", "error");
+    port?.postMessage({ type: "reconnect_host" });
+    finishPrompt();
+  }, 20_000);
 }
 
 async function refreshTab() {
@@ -166,23 +234,6 @@ async function refreshTab() {
   tabUrl.textContent = attachedTab.url.replace(/^https?:\/\//, "");
   tabFav.src = attachedTab.favIconUrl || "icons/icon16.png";
   tabCard.classList.remove("hidden");
-}
-
-function sendPrompt(text) {
-  const trimmed = text.trim();
-  if (!trimmed || streaming) return;
-  streaming = true;
-  currentAgentEl = null;
-  sendBtn.disabled = true;
-  abortBtn.disabled = false;
-  appendLine(trimmed, "user");
-  input.value = "";
-  port?.postMessage({
-    type: "prompt",
-    id: `p${++promptId}`,
-    text: trimmed,
-    tab: attachedTab,
-  });
 }
 
 function answerApproval(allow) {
@@ -242,8 +293,18 @@ chrome.tabs.onUpdated.addListener((id, info) => {
   }
 });
 
-chrome.storage.local.get(["llm"], (stored) => {
+chrome.storage.local.get(["llm", "models", "model"], (stored) => {
   if (stored?.llm) fillSettings(stored.llm);
+  if (stored?.models?.length) {
+    modelEl.replaceChildren();
+    for (const m of stored.models) {
+      const opt = document.createElement("option");
+      opt.value = `${m.provider}/${m.id}`;
+      opt.textContent = m.name ? `${m.name} (${m.provider})` : `${m.provider}/${m.id}`;
+      if (stored.model && m.provider === stored.model.provider && m.id === stored.model.id) opt.selected = true;
+      modelEl.appendChild(opt);
+    }
+  }
 });
 connect();
 refreshTab();

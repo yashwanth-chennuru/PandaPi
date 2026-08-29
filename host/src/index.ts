@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import "./stdio-guard.js";
 import { createPiController } from "./pi-session.js";
 import {
   createNativeDecoder,

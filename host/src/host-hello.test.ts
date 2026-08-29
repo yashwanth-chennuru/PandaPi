@@ -48,7 +48,7 @@ test("native host hello_ok without sharing ~/.pi", async () => {
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, PANDAPI_HOME: home, HOME: home },
+    env: { ...process.env, PANDAPI_HOME: home, HOME: home, PI_OFFLINE: "1" },
   });
   try {
     const hellos = helloReader(proc);
@@ -69,7 +69,7 @@ test("second hello still has the saved key and base URL", async () => {
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, PANDAPI_HOME: home, HOME: home },
+    env: { ...process.env, PANDAPI_HOME: home, HOME: home, PI_OFFLINE: "1" },
   });
   try {
     const hellos = helloReader(proc);
