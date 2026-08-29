@@ -40,9 +40,29 @@ function eventText(event: { type: string; [k: string]: unknown }): AgentEvent | 
       type?: string;
       delta?: string;
       text?: string;
+      error?: { errorMessage?: string; stopReason?: string };
+      reason?: string;
     } | undefined;
+    if (inner?.type === "error") {
+      const msg =
+        inner.error?.errorMessage ||
+        inner.reason ||
+        "LLM request failed. Check base URL, model id, and API key.";
+      return { type: "error", message: String(msg) };
+    }
     const delta = inner?.delta || (inner?.type === "text" ? inner.text : undefined);
     if (delta) return { type: "text_delta", text: delta };
+  }
+  if (event.type === "message_end") {
+    const message = event.message as {
+      errorMessage?: string;
+      stopReason?: string;
+      content?: Array<{ type?: string; text?: string }>;
+    } | undefined;
+    if (message?.errorMessage) return { type: "error", message: message.errorMessage };
+    if (message?.stopReason === "error") {
+      return { type: "error", message: "LLM returned an error (no details)." };
+    }
   }
   if (event.type === "tool_execution_start") {
     return {
@@ -55,7 +75,8 @@ function eventText(event: { type: string; [k: string]: unknown }): AgentEvent | 
     return { type: "tool_start", name: String(event.toolName ?? "tool") };
   }
   if (event.type === "tool_execution_end" || event.type === "tool_result") {
-    return { type: "tool_end", name: String(event.toolName ?? event.name ?? "tool") };
+    const err = event.isError ? ` error: ${JSON.stringify(event.result).slice(0, 200)}` : "";
+    return { type: "tool_end", name: String(event.toolName ?? event.name ?? "tool"), detail: err || undefined };
   }
   if (event.type === "auto_retry_start") {
     return {
@@ -63,7 +84,7 @@ function eventText(event: { type: string; [k: string]: unknown }): AgentEvent | 
       message: `Retrying LLM (${String(event.attempt)}/${String(event.maxAttempts)}): ${String(event.errorMessage ?? "")}`,
     };
   }
-  if (event.type === "agent_end") return { type: "done" };
+  if (event.type === "agent_end") return null;
   if (event.type === "error" || event.type === "agent_error") {
     return { type: "error", message: String(event.error ?? event.message ?? "Agent error") };
   }
@@ -77,6 +98,7 @@ export async function createPiController(opts: {
   const { bridge, requestApproval } = opts;
   const home = ensureHome(pandapiHome());
   let cfg = seedFromEnv(home) ?? readLlmConfig(home);
+  if (cfg) writeLlmConfig(cfg, home);
 
   let modelRuntime = await ModelRuntime.create({
     authPath: authPath(home),
@@ -191,7 +213,12 @@ export async function createPiController(opts: {
         return;
       }
       currentTab = tab;
-      emitCurrent = emit;
+      let saw = false;
+      emitCurrent = (e) => {
+        if (e.type !== "done") saw = true;
+        emit(e);
+      };
+      emit({ type: "text_delta", text: "Working…\n" });
       const prefix = tab
         ? `[Attached tab ${tab.tabId}] ${tab.title}\n${tab.url}\n\n`
         : "[No attached tab]\n\n";
@@ -199,7 +226,15 @@ export async function createPiController(opts: {
         await session.prompt(prefix + text);
       } catch (err) {
         emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
+        saw = true;
       } finally {
+        if (!saw) {
+          emit({
+            type: "error",
+            message:
+              "The model returned nothing. Confirm the OpenAI-compatible base URL, that model id is exact (e.g. big-pickle), and the server accepts chat completions with tools.",
+          });
+        }
         emit({ type: "done" });
         emitCurrent = undefined;
       }

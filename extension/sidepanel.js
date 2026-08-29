@@ -210,10 +210,10 @@ function sendPrompt(text) {
   clearTimeout(promptWatch);
   promptWatch = setTimeout(() => {
     if (!streaming) return;
-    appendLine("No reply from the host after 20s. Reloading the native host…", "error");
+    appendLine("No reply from the host after 60s. Reloading the native host…", "error");
     port?.postMessage({ type: "reconnect_host" });
     finishPrompt();
-  }, 20_000);
+  }, 60_000);
 }
 
 async function refreshTab() {
