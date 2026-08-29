@@ -22,5 +22,3 @@ console.log = toStderr;
 console.info = toStderr;
 console.debug = toStderr;
 console.warn = toStderr;
-
-if (!process.env.PI_OFFLINE) process.env.PI_OFFLINE = "1";

@@ -81,7 +81,25 @@ export function writeLlmConfig(cfg: LlmConfig, home = pandapiHome()): void {
         baseUrl: cfg.baseUrl.replace(/\/+$/, ""),
         api: "openai-completions",
         apiKey: cfg.apiKey,
-        models: [{ id: cfg.modelId, name: cfg.modelId }],
+        authHeader: true,
+        compat: {
+          supportsStore: false,
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: false,
+          supportsUsageInStreaming: false,
+          supportsStrictMode: false,
+          maxTokensField: "max_tokens",
+        },
+        models: [
+          {
+            id: cfg.modelId,
+            name: cfg.modelId,
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 128000,
+            maxTokens: 8192,
+          },
+        ],
       },
     },
   };

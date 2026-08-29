@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createNativeDecoder, encodeNativeMessage, gmailComposeUrl } from "./protocol.ts";
 import { isDangerousLabel, needsApproval } from "./danger.ts";
 import { pandapiHome, writeLlmConfig, readLlmConfig, publicConfig, PROVIDER_ID } from "./config.ts";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -60,6 +60,10 @@ test("isolated config writes under PANDAPI_HOME not ~/.pi", () => {
     expect(cfg?.baseUrl).toBe("https://example.test/v1");
     expect(cfg?.modelId).toBe("gpt-test");
     expect(cfg?.apiKey).toBe("sk-test-key-123456");
+    const raw = JSON.parse(readFileSync(path.join(dir, "models.json"), "utf8")) as {
+      providers: { compat: { compat: { maxTokensField: string } } };
+    };
+    expect(raw.providers.compat.compat.maxTokensField).toBe("max_tokens");
     const pub = publicConfig(cfg);
     expect(pub.hasKey).toBe(true);
     expect(pub.keyHint.includes("sk-t")).toBe(true);
