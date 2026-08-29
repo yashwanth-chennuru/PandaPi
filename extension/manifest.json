@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "PandaPi",
+  "version": "0.2.0",
+  "description": "Browser-use agent in a side panel. Isolated Pi harness; this window only.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtfCWtFItmVHZ2lrObKnyYQ5JRNOaITZn3xmDiMFF2Ikmut7KcXq8Ln5SUGHnyJJ5aOy3xIdHW3vqZVSbwvfDu1wIp4KEM4xTT/OCXBY05+Yv5XmvdRd/m3PmZHlrjnMrjpJ+AbtV14WQ9vTFI0NtGdlVP8MBz9p/IY98QMdqT0zXpmcvHUnCwiacUYS51eHxl1WEezMXgiozaHMgWi9u4JzrsbNtm8c4Wm1qliPllZC1OW3QZzJWOO91Os5pkmZlyww5A7Y05M8Dpc5GwPtS7aPobSquJFaBy8ElzqmgnPwgyBvLVmR3Ckl/Ka5ekHd6YX18N1kZf2i6q6Elp1HqqQIDAQAB",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "PandaPi",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "sidePanel",
+    "tabs",
+    "windows",
+    "scripting",
+    "storage",
+    "nativeMessaging",
+    "activeTab"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Period",
+        "mac": "Command+Shift+Period"
+      },
+      "description": "Open PandaPi"
+    }
+  }
+}
