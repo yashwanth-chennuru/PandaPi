@@ -52,14 +52,14 @@
 
     <section id="settings" class="settings hidden">
       <h2>LLM (OpenAI-compatible)</h2>
-      <p class="hint">Stored in ~/.pandapi on this computer. Isolated from the Pi CLI (~/.pi).</p>
+      <p class="hint">Stored in ~/.pandapi on this computer. Isolated from the Pi CLI (~/.pi). Reopening the panel reloads it — you do not need to paste the key again.</p>
       <label>
         Base URL
         <input id="cfgBase" type="url" placeholder="https://api.openai.com/v1" autocomplete="off" />
       </label>
       <label>
         API key
-        <input id="cfgKey" type="password" placeholder="sk-…" autocomplete="off" />
+        <input id="cfgKey" type="password" placeholder="sk-… (leave blank to keep saved)" autocomplete="off" />
       </label>
       <label>
         Model id

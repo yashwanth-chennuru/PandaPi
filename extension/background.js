@@ -16,7 +16,10 @@ function broadcast(msg) {
 }
 
 function connectNative() {
-  if (nativePort) return nativePort;
+  if (nativePort) {
+    nativePort.postMessage({ type: "hello" });
+    return nativePort;
+  }
   try {
     nativePort = chrome.runtime.connectNative(HOST);
   } catch (err) {

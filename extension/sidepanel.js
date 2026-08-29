@@ -37,6 +37,20 @@ function setLive(ok) {
   statusDot.classList.toggle("dim", !ok);
 }
 
+function fillSettings(llm) {
+  if (!llm) return;
+  if (llm.baseUrl) cfgBase.value = llm.baseUrl;
+  if (llm.modelId) cfgModel.value = llm.modelId;
+  cfgKey.value = "";
+  if (llm.hasKey) {
+    cfgKey.placeholder = `saved ${llm.keyHint} — leave blank to keep`;
+    cfgHint.textContent = `Saved in ~/.pandapi (${llm.keyHint}). Leave the key blank to keep using it.`;
+  } else {
+    cfgKey.placeholder = "sk-…";
+    cfgHint.textContent = "No key stored yet.";
+  }
+}
+
 function connect() {
   port = chrome.runtime.connect({ name: "pandapi-panel" });
   port.onMessage.addListener(onHost);
@@ -46,6 +60,7 @@ function connect() {
     showBanner("Disconnected from the extension worker.", true);
     setTimeout(connect, 500);
   });
+  port.postMessage({ type: "hello" });
 }
 
 function applyHello(msg) {
@@ -64,10 +79,12 @@ function applyHello(msg) {
     modelEl.appendChild(opt);
   }
   if (msg.llm) {
-    cfgBase.value = msg.llm.baseUrl || "";
-    cfgModel.value = msg.llm.modelId || "";
-    cfgKey.placeholder = msg.llm.hasKey ? `saved ${msg.llm.keyHint}` : "sk-…";
-    cfgHint.textContent = msg.llm.hasKey ? `Key on disk: ${msg.llm.keyHint}` : "No key stored yet.";
+    fillSettings(msg.llm);
+    chrome.storage.local.set({
+      llm: msg.llm,
+      models: msg.models || [],
+      model: msg.model || null,
+    });
   }
   showBanner(msg.warning || "", Boolean(msg.warning));
 }
@@ -225,5 +242,8 @@ chrome.tabs.onUpdated.addListener((id, info) => {
   }
 });
 
+chrome.storage.local.get(["llm"], (stored) => {
+  if (stored?.llm) fillSettings(stored.llm);
+});
 connect();
 refreshTab();
