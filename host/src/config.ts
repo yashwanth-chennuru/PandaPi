@@ -23,8 +23,17 @@ export function authPath(home = pandapiHome()): string {
   return path.join(home, "auth.json");
 }
 
+function chmodSafe(target: string, mode: number) {
+  try {
+    fs.chmodSync(target, mode);
+  } catch {
+    /* Windows may ignore; best-effort */
+  }
+}
+
 export function ensureHome(home = pandapiHome()): string {
-  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+  chmodSafe(home, 0o700);
   return home;
 }
 
@@ -75,6 +84,7 @@ export function seedFromEnv(home = pandapiHome()): LlmConfig | null {
 
 export function writeLlmConfig(cfg: LlmConfig, home = pandapiHome()): void {
   ensureHome(home);
+  const file = modelsPath(home);
   const payload = {
     providers: {
       [PROVIDER_ID]: {
@@ -95,7 +105,7 @@ export function writeLlmConfig(cfg: LlmConfig, home = pandapiHome()): void {
             id: cfg.modelId,
             name: cfg.modelId,
             reasoning: false,
-            input: ["text"],
+            input: ["text", "image"],
             contextWindow: 128000,
             maxTokens: 8192,
           },
@@ -103,7 +113,9 @@ export function writeLlmConfig(cfg: LlmConfig, home = pandapiHome()): void {
       },
     },
   };
-  fs.writeFileSync(modelsPath(home), JSON.stringify(payload, null, 2) + "\n");
+  fs.writeFileSync(file, JSON.stringify(payload, null, 2) + "\n", { mode: 0o600 });
+  chmodSafe(file, 0o600);
+  chmodSafe(home, 0o700);
 }
 
 export function publicConfig(cfg: LlmConfig | null): {

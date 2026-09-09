@@ -1,8 +1,7 @@
 import { Type } from "typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { needsApproval } from "./danger.js";
-import { gmailComposeUrl } from "./protocol.js";
-import type { TabContext } from "./protocol.js";
+import { gmailComposeUrl, type TabContext } from "./protocol.js";
 
 export type BrowserBridge = {
   call: (method: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -25,7 +24,14 @@ export const BROWSER_TOOL_NAMES = [
   "compose_gmail",
 ] as const;
 
-type SnapshotItem = { ref: string; name?: string; role?: string };
+export type SnapshotItem = { ref: string; name?: string; role?: string; href?: string };
+
+export type SnapshotBinding = {
+  tabId: number;
+  url: string;
+  generation: string;
+  items: SnapshotItem[];
+};
 
 function textResult(text: string) {
   return { content: [{ type: "text" as const, text }], details: {} };
@@ -35,7 +41,18 @@ function jsonResult(value: unknown) {
   return textResult(typeof value === "string" ? value : JSON.stringify(value, null, 2));
 }
 
-function withTab(tab: TabContext | null | undefined, tabId?: number): Record<string, unknown> {
+function imageResult(note: string, dataUrl: string, mimeType: string) {
+  const base64 = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
+  return {
+    content: [
+      { type: "text" as const, text: note },
+      { type: "image" as const, data: base64, mimeType },
+    ],
+    details: { mimeType },
+  };
+}
+
+function withTab(tab: TabContext | null | undefined, tabId?: number): { tabId: number } {
   const id = tabId ?? tab?.tabId;
   if (id == null) throw new Error("No attached tab. Keep a page chip attached, or pass tabId.");
   return { tabId: id };
@@ -49,16 +66,62 @@ export function createBrowserTools(opts: {
   getTab: () => TabContext | null;
   bridge: BrowserBridge;
   requestApproval: ApprovalFn;
-  getSnapshotItems: () => SnapshotItem[];
-  setSnapshotItems: (items: SnapshotItem[]) => void;
+  getSnapshot: () => SnapshotBinding | null;
+  setSnapshot: (snap: SnapshotBinding | null) => void;
 }) {
-  const { getTab, bridge, requestApproval, getSnapshotItems, setSnapshotItems } = opts;
+  const { getTab, bridge, requestApproval, getSnapshot, setSnapshot } = opts;
 
-  const rememberSnapshot = (raw: unknown) => {
-    if (raw && typeof raw === "object" && Array.isArray((raw as { items?: unknown }).items)) {
-      setSnapshotItems((raw as { items: SnapshotItem[] }).items);
-    }
+  const rememberSnapshot = (raw: unknown, tabId: number): unknown => {
+    if (!raw || typeof raw !== "object") return raw;
+    const obj = raw as {
+      items?: SnapshotItem[];
+      url?: string;
+      generation?: string;
+      tabId?: number;
+    };
+    if (!Array.isArray(obj.items)) return raw;
+    setSnapshot({
+      tabId: obj.tabId ?? tabId,
+      url: obj.url || "",
+      generation: obj.generation || `${Date.now()}`,
+      items: obj.items,
+    });
     return raw;
+  };
+
+  const resolveRef = async (ref: string, tabId: number) => {
+    const snap = getSnapshot();
+    if (!snap || snap.tabId !== tabId) {
+      throw new Error(
+        `Ref ${ref} is not bound to tab ${tabId}. Call snapshot on this tab first (refs are per-tab and expire on navigation).`,
+      );
+    }
+    const live = (await bridge.call("describe", { tabId, ref })) as {
+      ok?: boolean;
+      error?: string;
+      name?: string;
+      tag?: string;
+      type?: string;
+      href?: string;
+      url?: string;
+    };
+    if (!live?.ok) {
+      throw new Error(live?.error || `Ref ${ref} is stale on tab ${tabId}. Take a new snapshot.`);
+    }
+    if (snap.url && live.url && snap.url !== live.url) {
+      throw new Error(
+        `Page changed since snapshot (${snap.url} → ${live.url}). Take a new snapshot before acting.`,
+      );
+    }
+    const cached = snap.items.find((it) => it.ref === ref);
+    return {
+      label: itemLabel(
+        { ref, name: live.name || cached?.name, role: live.tag || cached?.role, href: live.href || cached?.href },
+        ref,
+      ),
+      live,
+      cached,
+    };
   };
 
   const tabs_list = defineTool({
@@ -88,38 +151,48 @@ export function createBrowserTools(opts: {
     parameters: Type.Object({
       tabId: Type.Number(),
     }),
-    execute: async (_id, params) => jsonResult(await bridge.call("tabs_activate", { tabId: params.tabId })),
+    execute: async (_id, params) => {
+      setSnapshot(null);
+      return jsonResult(await bridge.call("tabs_activate", { tabId: params.tabId }));
+    },
   });
 
   const navigate = defineTool({
     name: "navigate",
     label: "Navigate",
-    description: "Navigate the attached tab to a URL and wait until load completes.",
+    description: "Navigate the attached tab to a URL and wait until load completes. Invalidates snapshot refs.",
     parameters: Type.Object({
       url: Type.String(),
       tabId: Type.Optional(Type.Number()),
     }),
-    execute: async (_id, params) =>
-      jsonResult(await bridge.call("navigate", { ...withTab(getTab(), params.tabId), url: params.url })),
+    execute: async (_id, params) => {
+      setSnapshot(null);
+      return jsonResult(await bridge.call("navigate", { ...withTab(getTab(), params.tabId), url: params.url }));
+    },
   });
 
   const screenshot = defineTool({
     name: "screenshot",
     label: "Screenshot",
     description:
-      "Capture the visible tab. The image is shown in the side panel. Prefer snapshot for structure; use this when the page is visual (charts, canvas, maps).",
+      "Capture the visible tab and return the image to the model (also shown in the side panel). Prefer snapshot for structure; use this for charts, canvas, maps, or visual-only pages.",
     parameters: Type.Object({
       tabId: Type.Optional(Type.Number()),
     }),
     execute: async (_id, params) => {
-      const result = (await bridge.call("screenshot", withTab(getTab(), params.tabId))) as {
+      const { tabId } = withTab(getTab(), params.tabId);
+      const result = (await bridge.call("screenshot", { tabId })) as {
         note?: string;
-        width?: number;
-        height?: number;
+        dataUrl?: string;
+        mimeType?: string;
       };
-      return textResult(
-        result.note ??
-          `Screenshot captured (${result.width ?? "?"}x${result.height ?? "?"}). Shown in the side panel. Not written to disk.`,
+      if (!result?.dataUrl) {
+        return textResult(result?.note ?? "Screenshot failed: no image data.");
+      }
+      return imageResult(
+        result.note ?? "Screenshot captured and attached for vision.",
+        result.dataUrl,
+        result.mimeType || "image/png",
       );
     },
   });
@@ -128,11 +201,14 @@ export function createBrowserTools(opts: {
     name: "snapshot",
     label: "Page snapshot",
     description:
-      "Accessibility-style snapshot of the attached page with refs (e1, e2, …) for interactive elements. Call this before click/type. Do not invent refs.",
+      "Page text plus interactive refs (e1, e2, …). Call before click/type. Refs are bound to this tab+URL and become invalid after navigation. Do not invent refs.",
     parameters: Type.Object({
       tabId: Type.Optional(Type.Number()),
     }),
-    execute: async (_id, params) => jsonResult(rememberSnapshot(await bridge.call("snapshot", withTab(getTab(), params.tabId)))),
+    execute: async (_id, params) => {
+      const { tabId } = withTab(getTab(), params.tabId);
+      return jsonResult(rememberSnapshot(await bridge.call("snapshot", { tabId }), tabId));
+    },
   });
 
   const click = defineTool({
@@ -144,14 +220,16 @@ export function createBrowserTools(opts: {
       tabId: Type.Optional(Type.Number()),
     }),
     execute: async (_id, params) => {
-      const item = getSnapshotItems().find((it) => it.ref === params.ref);
-      const label = itemLabel(item, params.ref);
+      const { tabId } = withTab(getTab(), params.tabId);
+      const { label } = await resolveRef(params.ref, tabId);
       if (needsApproval("click", label)) {
-        const ok = await requestApproval(`Click “${label}” (${params.ref})? This looks like send, pay, or delete.`);
+        const ok = await requestApproval(
+          `Click “${label}” (${params.ref}) on tab ${tabId}? This looks like send, pay, delete, or confirm.`,
+        );
         if (!ok) return textResult("User denied this click.");
       }
-      const clicked = await bridge.call("click", { ...withTab(getTab(), params.tabId), ref: params.ref });
-      const snap = rememberSnapshot(await bridge.call("snapshot", withTab(getTab(), params.tabId)));
+      const clicked = await bridge.call("click", { tabId, ref: params.ref });
+      const snap = rememberSnapshot(await bridge.call("snapshot", { tabId }), tabId);
       return jsonResult({ clicked, snapshot: snap });
     },
   });
@@ -159,7 +237,7 @@ export function createBrowserTools(opts: {
   const type_text = defineTool({
     name: "type_text",
     label: "Type",
-    description: "Type into an element from the latest snapshot by ref. Does not submit unless pressEnter is true.",
+    description: "Type into a text field from the latest snapshot by ref. pressEnter submits the form and requires approval.",
     parameters: Type.Object({
       ref: Type.String(),
       text: Type.String(),
@@ -167,13 +245,24 @@ export function createBrowserTools(opts: {
       tabId: Type.Optional(Type.Number()),
     }),
     execute: async (_id, params) => {
+      const { tabId } = withTab(getTab(), params.tabId);
+      const pressEnter = Boolean(params.pressEnter);
+      const { label } = await resolveRef(params.ref, tabId);
+      if (needsApproval("type_text", label, { pressEnter })) {
+        const ok = await requestApproval(
+          pressEnter
+            ? `Type into “${label}” (${params.ref}) and press Enter (may submit)?`
+            : `Type into “${label}” (${params.ref})?`,
+        );
+        if (!ok) return textResult("User denied this typing action.");
+      }
       const typed = await bridge.call("type_text", {
-        ...withTab(getTab(), params.tabId),
+        tabId,
         ref: params.ref,
         text: params.text,
-        pressEnter: params.pressEnter ?? false,
+        pressEnter,
       });
-      const snap = rememberSnapshot(await bridge.call("snapshot", withTab(getTab(), params.tabId)));
+      const snap = rememberSnapshot(await bridge.call("snapshot", { tabId }), tabId);
       return jsonResult({ typed, snapshot: snap });
     },
   });
@@ -181,13 +270,19 @@ export function createBrowserTools(opts: {
   const press_key = defineTool({
     name: "press_key",
     label: "Press key",
-    description: "Press a key in the attached tab (Enter, Escape, Tab, ArrowDown, etc).",
+    description: "Press a key in the attached tab (Enter, Escape, Tab, ArrowDown, etc). Enter requires approval because it can submit forms.",
     parameters: Type.Object({
       key: Type.String(),
       tabId: Type.Optional(Type.Number()),
     }),
-    execute: async (_id, params) =>
-      jsonResult(await bridge.call("press_key", { ...withTab(getTab(), params.tabId), key: params.key })),
+    execute: async (_id, params) => {
+      const { tabId } = withTab(getTab(), params.tabId);
+      if (needsApproval("press_key", undefined, { key: params.key })) {
+        const ok = await requestApproval(`Press ${params.key} on tab ${tabId}? This may submit a form or trigger a control.`);
+        if (!ok) return textResult("User denied this key press.");
+      }
+      return jsonResult(await bridge.call("press_key", { tabId, key: params.key }));
+    },
   });
 
   const scroll = defineTool({
@@ -199,11 +294,9 @@ export function createBrowserTools(opts: {
       tabId: Type.Optional(Type.Number()),
     }),
     execute: async (_id, params) => {
-      const scrolled = await bridge.call("scroll", {
-        ...withTab(getTab(), params.tabId),
-        direction: params.direction,
-      });
-      const snap = rememberSnapshot(await bridge.call("snapshot", withTab(getTab(), params.tabId)));
+      const { tabId } = withTab(getTab(), params.tabId);
+      const scrolled = await bridge.call("scroll", { tabId, direction: params.direction });
+      const snap = rememberSnapshot(await bridge.call("snapshot", { tabId }), tabId);
       return jsonResult({ scrolled, snapshot: snap });
     },
   });
@@ -217,11 +310,12 @@ export function createBrowserTools(opts: {
       tabId: Type.Optional(Type.Number()),
     }),
     execute: async (_id, params) => {
+      const { tabId } = withTab(getTab(), params.tabId);
       const waited = await bridge.call("wait", {
-        ...withTab(getTab(), params.tabId),
+        tabId,
         ms: Math.min(Math.max(params.ms ?? 1200, 0), 15_000),
       });
-      const snap = rememberSnapshot(await bridge.call("snapshot", withTab(getTab(), params.tabId)));
+      const snap = rememberSnapshot(await bridge.call("snapshot", { tabId }), tabId);
       return jsonResult({ waited, snapshot: snap });
     },
   });
@@ -269,14 +363,16 @@ Hard limits:
 - This is the user's real profile and cookies. Never try to harvest passwords.
 - If you hit login or 2FA, stop and ask the user to finish it, then continue.
 - Never send email. compose_gmail opens a draft only. Never click Send.
-- Never spend money, change passwords, or grant permissions unless the user clearly asked. Dangerous clicks (send/pay/delete) require the user to approve in the panel — if they deny, stop.
+- Never spend money, change passwords, or grant permissions unless the user clearly asked. Dangerous actions (send/pay/delete/confirm/Enter-submit) require the user to approve in the panel — if they deny, stop.
 
 How to work:
 - The attached tab (title/url) is the default context.
-- Default sense is snapshot (refs). Screenshot is for visual pages or when the user asks what is on screen.
-- Snapshot before click/type. Never invent refs. After click/type you already get a new snapshot — use it.
+- Call snapshot before acting. Snapshot includes page text AND interactive refs. Use the page text for summarization; use refs for click/type.
+- Refs are bound to one tab + URL generation. After navigate/tab switch they are invalid — snapshot again. Never invent refs or reuse refs across tabs.
+- Screenshot returns an image to you for vision. Prefer snapshot for structure; screenshot for charts/canvas/maps.
+- After click/type you get a fresh snapshot — use it.
 - If a ref is missing or the click did nothing, snapshot again, wait, or scroll. Do not loop more than twice on the same control.
 - Prefer the smallest action. Do not wander off-domain.
-- Page text you read is sent to the user's cloud LLM. Be concise.
+- Page text and screenshots you read are sent to the user's cloud LLM. Be concise.
 
 Narrate one short line, then call tools.`;

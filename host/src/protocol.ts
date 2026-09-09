@@ -9,14 +9,14 @@ export type TabContext = {
 };
 
 export type ClientMessage =
-  | { type: "hello" }
-  | { type: "prompt"; id: string; text: string; tab: TabContext | null }
-  | { type: "abort" }
-  | { type: "new_session" }
-  | { type: "set_model"; provider: string; modelId: string }
-  | { type: "set_config"; baseUrl: string; apiKey: string; modelId: string }
-  | { type: "approval_result"; id: string; allow: boolean }
-  | { type: "browser_result"; id: string; ok: boolean; result?: unknown; error?: string };
+  | { type: "hello"; panelId?: string }
+  | { type: "prompt"; id: string; text: string; tab: TabContext | null; panelId?: string }
+  | { type: "abort"; panelId?: string }
+  | { type: "new_session"; panelId?: string }
+  | { type: "set_model"; provider: string; modelId: string; panelId?: string }
+  | { type: "set_config"; baseUrl: string; apiKey: string; modelId: string; panelId?: string }
+  | { type: "approval_result"; id: string; allow: boolean; panelId?: string }
+  | { type: "browser_result"; id: string; ok: boolean; result?: unknown; error?: string; panelId?: string };
 
 export type AgentEvent =
   | { type: "text_delta"; text: string }
@@ -40,11 +40,18 @@ export type HostMessage =
       piReady: boolean;
       llm: PublicLlm;
       warning?: string;
+      panelId?: string;
     }
-  | { type: "hello_error"; message: string }
-  | { type: "event"; id: string; event: AgentEvent }
-  | { type: "browser_request"; id: string; method: string; params: Record<string, unknown> }
-  | { type: "approval_request"; id: string; summary: string };
+  | { type: "hello_error"; message: string; panelId?: string }
+  | { type: "event"; id: string; event: AgentEvent; panelId?: string }
+  | {
+      type: "browser_request";
+      id: string;
+      method: string;
+      params: Record<string, unknown>;
+      panelId?: string;
+    }
+  | { type: "approval_request"; id: string; summary: string; panelId?: string };
 
 export type BrowserMethod =
   | "tabs_list"
@@ -57,6 +64,7 @@ export type BrowserMethod =
   | "type_text"
   | "press_key"
   | "scroll"
+  | "describe"
   | "wait"
   | "compose_gmail";
 

@@ -22,16 +22,20 @@ const cfgHint = document.getElementById("cfgHint");
 
 const hostStatus = document.getElementById("hostStatus");
 
+/** Idle progress timeout: resets on every event for the active prompt. */
+const PROGRESS_IDLE_MS = 90_000;
+
 let port = null;
 let attachedTab = null;
 let streaming = false;
-let promptId = 0;
+let promptSeq = 0;
+let activePromptId = null;
 let currentAgentEl = null;
 let pendingApprovalId = null;
 let live = false;
 let piReady = false;
 let helloTimer = null;
-let promptWatch = null;
+let progressWatch = null;
 
 function setHostStatus(text) {
   hostStatus.textContent = text;
@@ -71,6 +75,25 @@ function armHello() {
     port?.postMessage({ type: "reconnect_host" });
     setTimeout(() => port?.postMessage({ type: "hello" }), 400);
   }, 4000);
+}
+
+function clearProgressWatch() {
+  clearTimeout(progressWatch);
+  progressWatch = null;
+}
+
+function bumpProgressWatch() {
+  clearProgressWatch();
+  if (!streaming || !activePromptId) return;
+  progressWatch = setTimeout(() => {
+    if (!streaming || !activePromptId) return;
+    appendLine(
+      "No progress from the host for 90s (slow LLM/page work is OK — this only fires when nothing arrives). Reloading the native host…",
+      "error",
+    );
+    port?.postMessage({ type: "reconnect_host" });
+    finishPrompt();
+  }, PROGRESS_IDLE_MS);
 }
 
 function connect() {
@@ -139,15 +162,21 @@ function onHost(msg) {
     pendingApprovalId = msg.id;
     approvalText.textContent = msg.summary;
     approvalEl.classList.remove("hidden");
+    bumpProgressWatch();
     return;
   }
   if (msg.type === "event") {
+    // Only handle events for our active prompt (ignore other panels / stale ids)
+    if (activePromptId && msg.id !== activePromptId && msg.id !== "host") return;
+    bumpProgressWatch();
     const e = msg.event;
     if (e.type === "text_delta") appendAgent(e.text);
     if (e.type === "tool_start") appendLine(`tool ${e.name}${e.detail ? " " + e.detail : ""}`, "tool");
     if (e.type === "tool_end") appendLine(`done ${e.name}`, "tool");
     if (e.type === "error") appendLine(e.message, "error");
-    if (e.type === "done") finishPrompt();
+    if (e.type === "done") {
+      if (!activePromptId || msg.id === activePromptId || msg.id === "host") finishPrompt();
+    }
   }
 }
 
@@ -174,10 +203,11 @@ function appendAgent(delta) {
 
 function finishPrompt() {
   streaming = false;
+  activePromptId = null;
   currentAgentEl = null;
   sendBtn.disabled = false;
   abortBtn.disabled = true;
-  clearTimeout(promptWatch);
+  clearProgressWatch();
 }
 
 function sendPrompt(text) {
@@ -200,20 +230,15 @@ function sendPrompt(text) {
   abortBtn.disabled = false;
   appendLine(trimmed, "user");
   input.value = "";
-  const id = `p${++promptId}`;
+  const id = `p${++promptSeq}-${Date.now()}`;
+  activePromptId = id;
   port.postMessage({
     type: "prompt",
     id,
     text: trimmed,
     tab: attachedTab,
   });
-  clearTimeout(promptWatch);
-  promptWatch = setTimeout(() => {
-    if (!streaming) return;
-    appendLine("No reply from the host after 60s. Reloading the native host…", "error");
-    port?.postMessage({ type: "reconnect_host" });
-    finishPrompt();
-  }, 60_000);
+  bumpProgressWatch();
 }
 
 async function refreshTab() {
@@ -241,6 +266,7 @@ function answerApproval(allow) {
   port?.postMessage({ type: "approval_result", id: pendingApprovalId, allow });
   pendingApprovalId = null;
   approvalEl.classList.add("hidden");
+  bumpProgressWatch();
 }
 
 sendBtn.addEventListener("click", () => sendPrompt(input.value));
