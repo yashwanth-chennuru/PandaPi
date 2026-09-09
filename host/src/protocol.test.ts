@@ -1,10 +1,18 @@
 import { expect, test } from "bun:test";
 import { createNativeDecoder, encodeNativeMessage, gmailComposeUrl } from "./protocol.ts";
 import { isDangerousLabel, needsApproval } from "./danger.ts";
-import { pandapiHome, writeLlmConfig, readLlmConfig, publicConfig, PROVIDER_ID } from "./config.ts";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  pandapiHome,
+  writeLlmConfig,
+  readLlmConfig,
+  publicConfig,
+  PROVIDER_ID,
+  ensureHome,
+} from "./config.ts";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { runPageAction } from "../../extension/page-actions.js";
 
 test("native message roundtrip", () => {
   const decoder = createNativeDecoder();
@@ -35,13 +43,19 @@ test("gmail compose url encodes to/subject/body", () => {
   expect(parsed.searchParams.get("body")).toBe("See screenshot");
 });
 
-test("dangerous labels", () => {
+test("dangerous labels cover confirm/continue euphemisms", () => {
   expect(isDangerousLabel("Send")).toBe(true);
   expect(isDangerousLabel("Place order")).toBe(true);
   expect(isDangerousLabel("Delete account")).toBe(true);
+  expect(isDangerousLabel("Confirm")).toBe(true);
+  expect(isDangerousLabel("Continue")).toBe(true);
   expect(isDangerousLabel("Learn more")).toBe(false);
   expect(needsApproval("click", "Pay now")).toBe(true);
   expect(needsApproval("compose_gmail", "Send")).toBe(false);
+  expect(needsApproval("type_text", "Search", { pressEnter: true })).toBe(true);
+  expect(needsApproval("type_text", "Search", { pressEnter: false })).toBe(false);
+  expect(needsApproval("press_key", undefined, { key: "Enter" })).toBe(true);
+  expect(needsApproval("press_key", undefined, { key: "Escape" })).toBe(false);
 });
 
 test("isolated config writes under PANDAPI_HOME not ~/.pi", () => {
@@ -61,9 +75,10 @@ test("isolated config writes under PANDAPI_HOME not ~/.pi", () => {
     expect(cfg?.modelId).toBe("gpt-test");
     expect(cfg?.apiKey).toBe("sk-test-key-123456");
     const raw = JSON.parse(readFileSync(path.join(dir, "models.json"), "utf8")) as {
-      providers: { compat: { compat: { maxTokensField: string } } };
+      providers: { compat: { compat: { maxTokensField: string }; models: Array<{ input: string[] }> } };
     };
     expect(raw.providers.compat.compat.maxTokensField).toBe("max_tokens");
+    expect(raw.providers.compat.models[0].input).toContain("image");
     const pub = publicConfig(cfg);
     expect(pub.hasKey).toBe(true);
     expect(pub.keyHint.includes("sk-t")).toBe(true);
@@ -72,4 +87,35 @@ test("isolated config writes under PANDAPI_HOME not ~/.pi", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("config directory is 0700 and models.json is 0600", () => {
+  if (process.platform === "win32") return;
+  const dir = mkdtempSync(path.join(os.tmpdir(), "pandapi-perm-"));
+  try {
+    ensureHome(dir);
+    writeLlmConfig(
+      {
+        providerId: PROVIDER_ID,
+        baseUrl: "https://example.test/v1",
+        apiKey: "sk-secret",
+        modelId: "m",
+      },
+      dir,
+    );
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    expect(statSync(path.join(dir, "models.json")).mode & 0o777).toBe(0o600);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("runPageAction is self-contained (Chrome executeScript serialization)", () => {
+  const src = Function.prototype.toString.call(runPageAction);
+  expect(src).toContain("function findRef");
+  expect(src).toContain("function snapshot");
+  expect(src).toContain("pageText");
+  expect(src).toContain("function clearRefs");
+  // Must not close over module-level helpers — only the function body is serialized.
+  expect(src.startsWith("function") || src.includes("=>")).toBe(true);
 });

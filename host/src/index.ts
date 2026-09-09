@@ -18,15 +18,18 @@ const approvals = new Map<string, { resolve: (v: boolean) => void }>();
 let reqCounter = 0;
 let approvalCounter = 0;
 
+/** Panel that owns the currently running / queued prompt context. */
+let activePanelId: string | undefined;
+
 const bridge: BrowserBridge = {
   call(method, params) {
     const id = `b${++reqCounter}`;
-    send({ type: "browser_request", id, method, params });
+    send({ type: "browser_request", id, method, params, panelId: activePanelId });
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id);
         reject(new Error(`Browser tool timed out: ${method}`));
-      }, 60_000);
+      }, 90_000);
       pending.set(id, {
         resolve: (v) => {
           clearTimeout(timer);
@@ -43,7 +46,7 @@ const bridge: BrowserBridge = {
 
 const requestApproval: ApprovalFn = (summary) => {
   const id = `a${++approvalCounter}`;
-  send({ type: "approval_request", id, summary });
+  send({ type: "approval_request", id, summary, panelId: activePanelId });
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       approvals.delete(id);
@@ -62,6 +65,9 @@ const decoder = createNativeDecoder();
 let controller: Awaited<ReturnType<typeof createPiController>> | null = null;
 let starting: Promise<void> | null = null;
 
+/** Serialize prompts so emitCurrent / activePanelId cannot be overwritten mid-run. */
+let promptChain: Promise<void> = Promise.resolve();
+
 async function ensureController() {
   if (controller) return controller;
   if (!starting) {
@@ -78,7 +84,10 @@ async function ensureController() {
   return controller!;
 }
 
-function helloPayload(c: Awaited<ReturnType<typeof createPiController>>): HostMessage {
+function helloPayload(
+  c: Awaited<ReturnType<typeof createPiController>>,
+  panelId?: string,
+): HostMessage {
   return {
     type: "hello_ok",
     models: c.models,
@@ -86,18 +95,29 @@ function helloPayload(c: Awaited<ReturnType<typeof createPiController>>): HostMe
     piReady: Boolean(c.model),
     llm: c.llm,
     warning: c.warning,
+    panelId,
   };
+}
+
+function enqueuePrompt(run: () => Promise<void>): Promise<void> {
+  const next = promptChain.then(run, run);
+  promptChain = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
 }
 
 async function handle(msg: ClientMessage) {
   if (msg.type === "hello") {
     try {
       const c = await ensureController();
-      send(helloPayload(c));
+      send(helloPayload(c, msg.panelId));
     } catch (err) {
       send({
         type: "hello_error",
         message: err instanceof Error ? err.message : String(err),
+        panelId: msg.panelId,
       });
     }
     return;
@@ -137,18 +157,28 @@ async function handle(msg: ClientMessage) {
   if (msg.type === "set_config") {
     try {
       await c.setConfig(msg.baseUrl, msg.apiKey, msg.modelId);
-      send(helloPayload(c));
+      send(helloPayload(c, msg.panelId));
     } catch (err) {
       send({
         type: "hello_error",
         message: err instanceof Error ? err.message : String(err),
+        panelId: msg.panelId,
       });
     }
     return;
   }
   if (msg.type === "prompt") {
-    await c.prompt(msg.id, msg.text, msg.tab, (event) => {
-      send({ type: "event", id: msg.id, event });
+    const panelId = msg.panelId;
+    const promptId = msg.id;
+    await enqueuePrompt(async () => {
+      activePanelId = panelId;
+      try {
+        await c.prompt(promptId, msg.text, msg.tab, (event) => {
+          send({ type: "event", id: promptId, event, panelId });
+        });
+      } finally {
+        if (activePanelId === panelId) activePanelId = undefined;
+      }
     });
   }
 }
@@ -161,6 +191,7 @@ process.stdin.on("data", (chunk) => {
           type: "event",
           id: "host",
           event: { type: "error", message: err instanceof Error ? err.message : String(err) },
+          panelId: activePanelId,
         });
       });
     }

@@ -1,12 +1,12 @@
-import { clickRef, pressKey, scrollPage, snapshotPage, typeRef } from "./page-actions.js";
+import { runPageAction } from "./page-actions.js";
 
-async function inject(tabId, func, args = []) {
+async function inject(tabId, action, args = []) {
   try {
     const [result] = await chrome.scripting.executeScript({
       target: { tabId },
-      world: "MAIN",
-      func,
-      args,
+      world: "ISOLATED",
+      func: runPageAction,
+      args: [action, ...args],
     });
     if (result?.error) throw new Error(String(result.error));
     return result?.result;
@@ -41,9 +41,12 @@ function waitTabComplete(tabId, timeoutMs = 20000) {
       if (id === tabId && info.status === "complete") finish(tab);
     };
     chrome.tabs.onUpdated.addListener(onUpdated);
-    chrome.tabs.get(tabId).then((tab) => {
-      if (tab.status === "complete") finish(tab);
-    }).catch(() => {});
+    chrome.tabs
+      .get(tabId)
+      .then((tab) => {
+        if (tab.status === "complete") finish(tab);
+      })
+      .catch(() => {});
     setTimeout(async () => {
       try {
         finish(await chrome.tabs.get(tabId));
@@ -52,6 +55,22 @@ function waitTabComplete(tabId, timeoutMs = 20000) {
       }
     }, timeoutMs);
   });
+}
+
+async function withFocusRestored(tabId, fn) {
+  const target = await chrome.tabs.get(tabId);
+  const [prev] = await chrome.tabs.query({ active: true, windowId: target.windowId });
+  const prevId = prev?.id;
+  if (prevId !== tabId) {
+    await chrome.tabs.update(tabId, { active: true });
+  }
+  try {
+    return await fn(target);
+  } finally {
+    if (prevId && prevId !== tabId) {
+      await chrome.tabs.update(prevId, { active: true }).catch(() => {});
+    }
+  }
 }
 
 export async function handleBrowserMethod(method, params) {
@@ -85,29 +104,40 @@ export async function handleBrowserMethod(method, params) {
       return tabInfo(tab);
     }
     case "screenshot": {
-      const tab = await chrome.tabs.get(tabId);
-      await chrome.tabs.update(tabId, { active: true });
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
-      return {
-        mimeType: "image/png",
-        dataUrl,
-        note: "Screenshot captured. Shown in the PandaPi side panel. Not written to disk. Snapshots still go to your LLM provider.",
-      };
+      return withFocusRestored(tabId, async (tab) => {
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+        return {
+          mimeType: "image/png",
+          dataUrl,
+          tabId,
+          url: tab.url || "",
+          note: "Screenshot captured. Image bytes are returned to the model. Also shown in the side panel. Not written to disk.",
+        };
+      });
     }
     case "snapshot": {
-      return inject(tabId, snapshotPage);
+      const tab = await chrome.tabs.get(tabId);
+      const snap = await inject(tabId, "snapshot");
+      return {
+        ...snap,
+        tabId,
+        url: tab.url || snap?.url || "",
+      };
     }
     case "click": {
-      return inject(tabId, clickRef, [params.ref]);
+      return inject(tabId, "click", [params.ref]);
     }
     case "type_text": {
-      return inject(tabId, typeRef, [params.ref, params.text, Boolean(params.pressEnter)]);
+      return inject(tabId, "type", [params.ref, params.text, Boolean(params.pressEnter)]);
     }
     case "press_key": {
-      return inject(tabId, pressKey, [params.key]);
+      return inject(tabId, "press", [params.key]);
     }
     case "scroll": {
-      return inject(tabId, scrollPage, [params.direction || "down"]);
+      return inject(tabId, "scroll", [params.direction || "down"]);
+    }
+    case "describe": {
+      return inject(tabId, "describe", [params.ref]);
     }
     case "wait": {
       const ms = Math.min(Math.max(Number(params.ms) || 1200, 0), 15_000);

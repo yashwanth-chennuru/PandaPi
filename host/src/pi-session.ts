@@ -6,7 +6,7 @@ import {
   SettingsManager,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
-import { BROWSER_SYSTEM_PROMPT, BROWSER_TOOL_NAMES, createBrowserTools, type ApprovalFn, type BrowserBridge } from "./browser-tools.js";
+import { BROWSER_SYSTEM_PROMPT, BROWSER_TOOL_NAMES, createBrowserTools, type ApprovalFn, type BrowserBridge, type SnapshotBinding } from "./browser-tools.js";
 import {
   pandapiHome,
   modelsPath,
@@ -121,15 +121,15 @@ export async function createPiController(opts: {
   }
 
   let currentTab: TabContext | null = null;
-  let snapshotItems: Array<{ ref: string; name?: string; role?: string }> = [];
+  let snapshot: SnapshotBinding | null = null;
 
   const tools = createBrowserTools({
     getTab: () => currentTab,
     bridge,
     requestApproval,
-    getSnapshotItems: () => snapshotItems,
-    setSnapshotItems: (items) => {
-      snapshotItems = items;
+    getSnapshot: () => snapshot,
+    setSnapshot: (next) => {
+      snapshot = next;
     },
   });
 
@@ -213,6 +213,7 @@ export async function createPiController(opts: {
         return;
       }
       currentTab = tab;
+      snapshot = null;
       let saw = false;
       emitCurrent = (e) => {
         if (e.type !== "done") saw = true;
@@ -243,6 +244,7 @@ export async function createPiController(opts: {
       await session?.abort();
     },
     async newSession() {
+      snapshot = null;
       await rebuildSession();
     },
     async setModel(provider, modelId) {
