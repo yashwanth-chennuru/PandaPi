@@ -3,32 +3,51 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
     <title>PandaPi</title>
     <link rel="stylesheet" href="sidepanel.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand">
-        <span class="logo" aria-hidden="true"></span>
-        <span>PandaPi</span>
+        <span class="mark" aria-hidden="true">
+          <svg class="mark-svg" viewBox="0 0 24 24">
+            <circle class="mark-ink" cx="7" cy="7.5" r="3" />
+            <circle class="mark-ink" cx="17" cy="7.5" r="3" />
+            <path
+              class="mark-ink"
+              d="M12 6.2c-4.6 0-8.3 3-8.3 6.6 0 3.3 3.7 5.1 8.3 5.1s8.3-1.8 8.3-5.1c0-3.6-3.7-6.6-8.3-6.6Z"
+            />
+            <circle class="mark-eye" cx="9.1" cy="12.6" r="1.35" />
+            <circle class="mark-eye" cx="14.9" cy="12.6" r="1.35" />
+          </svg>
+        </span>
+        <span class="brand-text">
+          <span class="brand-name">PandaPi</span>
+          <span class="mode-line">
+            <span id="hostStatus">Connecting…</span>
+            <span id="statusDot" class="dot dim" title="Host status"></span>
+          </span>
+        </span>
       </div>
       <div class="top-actions">
-        <button id="openSettings" class="icon-btn" title="Settings">⚙</button>
-        <button id="newChat" class="icon-btn" title="New chat">+</button>
+        <button id="openSettings" class="icon-btn" type="button" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+        <button id="newChat" class="icon-btn" type="button" title="New chat" aria-label="New chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
       </div>
     </header>
 
-    <section class="chat-head">
-      <div class="chat-title">Chat</div>
-      <div class="mode-line">
-        <span id="hostStatus">Connecting…</span>
-        <span id="statusDot" class="dot dim" title="Host status"></span>
-      </div>
-    </section>
-
     <main id="log" class="log">
       <div class="empty" id="empty">
-        <p>A browser-use agent for the tab you are looking at. Snapshots go to your cloud LLM. Nothing else leaves this machine.</p>
+        <p class="empty-lede">A browser-use agent for the tab you are looking at. Snapshots go to your cloud LLM. Nothing else leaves this machine.</p>
         <div class="chips">
           <button class="chip" data-prompt="Summarize this page">Summarize this page</button>
           <button class="chip" data-prompt="Take a screenshot of this tab">Take a screenshot</button>
@@ -39,20 +58,25 @@
 
     <div id="shotWrap" class="shot-wrap hidden">
       <img id="shot" alt="Latest screenshot" />
-      <button id="clearShot" class="icon-btn tiny" title="Hide screenshot">×</button>
+      <button id="clearShot" class="icon-btn tiny" type="button" title="Hide screenshot" aria-label="Hide screenshot">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
     </div>
 
     <div id="approval" class="approval hidden">
+      <span class="approval-label">Approval needed</span>
       <p id="approvalText"></p>
       <div class="approval-actions">
-        <button id="approvalDeny" type="button">Deny</button>
-        <button id="approvalAllow" type="button">Approve</button>
+        <button id="approvalDeny" class="btn" type="button">Deny</button>
+        <button id="approvalAllow" class="btn btn-primary" type="button">Approve</button>
       </div>
     </div>
 
     <section id="settings" class="settings hidden">
-      <h2>LLM (OpenAI-compatible)</h2>
-      <p class="hint">Stored in ~/.pandapi on this computer. Isolated from the Pi CLI (~/.pi). Reopening the panel reloads it — you do not need to paste the key again.</p>
+      <h2>Model provider</h2>
+      <p class="hint">Stored in ~/.pandapi on this computer, isolated from the Pi CLI. Reopening the panel reloads it, so you do not need to paste the key again.</p>
       <label>
         Base URL
         <input id="cfgBase" type="url" placeholder="https://api.openai.com/v1" autocomplete="off" />
@@ -76,13 +100,26 @@
           <div id="tabTitle" class="tab-title"></div>
           <div id="tabUrl" class="tab-url"></div>
         </div>
-        <button id="detachTab" class="icon-btn tiny" title="Detach page context">×</button>
+        <button id="detachTab" class="icon-btn tiny" type="button" title="Detach page context" aria-label="Detach page context">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
       </div>
+
       <textarea id="input" rows="2" placeholder="Ask about this page, or tell PandaPi what to do."></textarea>
       <div class="toolbar">
-        <button id="abort" class="icon-btn" title="Stop" disabled>■</button>
-        <select id="model" title="Model"></select>
-        <button id="send" class="send" title="Send">↑</button>
+        <button id="abort" class="icon-btn" type="button" title="Stop" aria-label="Stop" disabled>
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="7" y="7" width="10" height="10" rx="1.5" />
+          </svg>
+        </button>
+        <select id="model" title="Model" aria-label="Model"></select>
+        <button id="send" class="send" type="button" title="Send" aria-label="Send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 19V5M6 11l6-6 6 6" />
+          </svg>
+        </button>
       </div>
       <p id="banner" class="banner hidden"></p>
     </footer>

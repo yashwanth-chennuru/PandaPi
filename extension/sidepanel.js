@@ -44,7 +44,7 @@ function setHostStatus(text) {
 function showBanner(text, danger = false) {
   banner.textContent = text || "";
   banner.classList.toggle("hidden", !text);
-  banner.style.color = danger ? "#ff6b6b" : "#ffd37a";
+  banner.style.color = danger ? "var(--danger)" : "var(--ink-2)";
 }
 
 function setLive(ok) {

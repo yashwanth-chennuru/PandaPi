@@ -136,6 +136,17 @@ scripts/
   setup-host.mjs           setup-host: launcher + native-messaging manifests
 ```
 
+## Design
+
+The side panel follows a restrained Scandinavian system: a near-black canvas, a neutral alpha-white ink ladder, one system sans-serif, an 8px spacing rhythm, and restrained radii. Color is reserved for state — the connected/error dot and error text — so the interface stays quiet. Tokens live at the top of `extension/sidepanel.css`.
+
+- Canvas `#0a0a0a`; ink is alpha white at 100 / 56 / 46 / 36%.
+- Borders 10% white, strong borders 18%, hover 9%, pressed 14%.
+- One inline SVG icon set at a single stroke weight; no emoji or icon fonts.
+- Semantic color only: `--ok` for the live dot, `--danger` for errors.
+
+The visual system comes from the [`scandinavian-design`](https://skills.sh/ericzakariasson/scandinavian-design) skill, installed under `.agents/skills/`.
+
 ## Development
 
 ```bash
