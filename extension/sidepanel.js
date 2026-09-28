@@ -21,6 +21,7 @@ const cfgModel = document.getElementById("cfgModel");
 const cfgHint = document.getElementById("cfgHint");
 
 const hostStatus = document.getElementById("hostStatus");
+const versionEl = document.getElementById("version");
 
 /** Idle progress timeout: resets on every event for the active prompt. */
 const PROGRESS_IDLE_MS = 90_000;
@@ -332,5 +333,10 @@ chrome.storage.local.get(["llm", "models", "model"], (stored) => {
     }
   }
 });
+try {
+  versionEl.textContent = `v${chrome.runtime.getManifest().version}`;
+} catch {
+  versionEl.textContent = "";
+}
 connect();
 refreshTab();

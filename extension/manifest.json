@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PandaPi",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Browser-use agent in a side panel. Isolated Pi harness; this window only.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtfCWtFItmVHZ2lrObKnyYQ5JRNOaITZn3xmDiMFF2Ikmut7KcXq8Ln5SUGHnyJJ5aOy3xIdHW3vqZVSbwvfDu1wIp4KEM4xTT/OCXBY05+Yv5XmvdRd/m3PmZHlrjnMrjpJ+AbtV14WQ9vTFI0NtGdlVP8MBz9p/IY98QMdqT0zXpmcvHUnCwiacUYS51eHxl1WEezMXgiozaHMgWi9u4JzrsbNtm8c4Wm1qliPllZC1OW3QZzJWOO91Os5pkmZlyww5A7Y05M8Dpc5GwPtS7aPobSquJFaBy8ElzqmgnPwgyBvLVmR3Ckl/Ka5ekHd6YX18N1kZf2i6q6Elp1HqqQIDAQAB",
   "icons": {
