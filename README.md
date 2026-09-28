@@ -2,21 +2,21 @@
 
 A **browser-only** [Pi](https://github.com/earendil-works/pi) agent in a Brave/Chrome **side panel**. Pi is the harness. The extension is the hands. Nothing on disk, no shell — this window only.
 
-You already use Pi in the terminal. This is the same keys and models, with a chat UI attached to the tab you are looking at.
+You already use Pi in the terminal. This is the same harness with a chat UI attached to the tab you are looking at — but it runs on **its own credentials** (`~/.pandapi`), fully separate from your terminal Pi (`~/.pi/agent`).
 
 ## What it does
 
 - Side panel chat (right-hand panel via the toolbar button)
 - Current-tab context chip (dismissible)
 - Tools: list/create/switch tabs, navigate, screenshot (**returned to the model when it supports vision**), page snapshot, page text, click/type by ref, Gmail **draft** (does not send)
-- Cloud BYOK through Pi (`~/.pi/agent` auth), not through the extension
+- BYOK with its own key in `~/.pandapi/auth.json`, isolated from the Pi CLI — nothing stored in the extension
 - Optional [Stagehand](https://www.stagehand.dev/) **attach** if you already expose CDP on this browser (`PANDAPI_CDP_URL`). It never launches a second profile and never uses Browserbase.
 
 ## Requirements
 
 - Desktop Brave (or Chrome). No mobile.
 - [Bun](https://bun.sh) 1.2+ (`curl -fsSL https://bun.sh/install | bash`)
-- Pi CLI already working with a cloud provider key in `~/.pi/agent`
+- An API key for a supported provider (e.g. OpenCode Go). PandaPi bundles the Pi SDK, so a Pi CLI install is optional.
 
 The side panel is still a normal MV3 extension (the browser cannot run Bun). Bun replaces Node for install, tests, and the native host that embeds Pi.
 
@@ -26,6 +26,8 @@ The side panel is still a normal MV3 extension (the browser cannot run Bun). Bun
 git clone <this-repo> && cd PandaPi
 bun install
 bun run setup-host   # writes scripts/pandapi-host.sh + the Brave/Chrome native-messaging manifests
+bun run set-key      # prompts (hidden) for PandaPi's own API key; or pass --key/--model
+bun run check-key    # confirms the key and lists the models PandaPi can use
 ```
 
 The setup script points the `com.pandapi.host` manifest at *this* checkout, so re-run it if you move the folder or clone over an old install.
@@ -38,6 +40,26 @@ Then in Brave:
 3. Click the PandaPi icon (opens the side panel)
 
 If the panel says the native host is missing, `setup-host` did not land a manifest in Brave’s `NativeMessagingHosts` directory. Re-run it and fully quit Brave.
+
+## Your key, separate from the Pi CLI
+
+PandaPi keeps everything it owns in `~/.pandapi` (override with `PANDAPI_HOME`):
+
+| PandaPi (browser) | Pi CLI (terminal) |
+| --- | --- |
+| `~/.pandapi/auth.json` | `~/.pi/agent/auth.json` |
+| `~/.pandapi/settings.json` | `~/.pi/agent/settings.json` |
+| `~/.pandapi/models-store.json` | `~/.pi/agent/models-store.json` |
+
+Nothing is shared. The browser agent never reads the CLI's key, settings, model catalog, extensions, or skills. That means you can plug in a **dedicated API key** and track this agent's usage on its own in your provider dashboard:
+
+```bash
+bun run set-key                                  # hidden prompt; provider defaults to opencode-go
+bun run set-key --key sk-... --model kimi-k2.6   # or pass it directly
+bun run set-key --check                          # same as: bun run check-key
+```
+
+`set-key` merges into `~/.pandapi/auth.json` (chmod `0600`) and never touches `~/.pi/agent`. Re-run it any time to rotate the key, then close and reopen the side panel so the native host restarts and picks it up.
 
 ## Optional Stagehand (same window)
 
@@ -60,7 +82,7 @@ This Brave window
                                               ↻ browser_request / browser_result
 ```
 
-The host is `com.pandapi.host`. Tool calls never run `bash`, `read`, or `write`.
+The host is `com.pandapi.host`. Tool calls never run `bash`, `read`, or `write`. The host embeds the Pi SDK and reads only `~/.pandapi` — the Pi CLI's `~/.pi/agent` is never touched.
 
 ## Tests
 

@@ -1,4 +1,17 @@
+import os from "node:os";
+import path from "node:path";
+
 export const NATIVE_HOST_NAME = "com.pandapi.host";
+
+/**
+ * PandaPi's own agent directory. Deliberately separate from the Pi CLI's
+ * `~/.pi/agent` so the browser agent never reads or writes the CLI's keys,
+ * settings, model catalog, or extensions. Override with `PANDAPI_HOME`.
+ */
+export function resolvePandapiHome(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.PANDAPI_HOME?.trim();
+  return override || path.join(os.homedir(), ".pandapi");
+}
 
 export type TabContext = {
   tabId: number;

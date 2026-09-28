@@ -63,7 +63,8 @@ Next:
   1. Brave → brave://extensions → Developer mode
   2. Load unpacked → ${path.join(root, "extension")}
   3. Pin PandaPi and open the side panel
-  4. Pi keys stay in ~/.pi/agent (same as the CLI)
+  4. Add a key just for this agent: bun run set-key
+     (stored in ~/.pandapi, kept separate from the Pi CLI's ~/.pi/agent)
 
 Optional Stagehand (this window only, no new profile):
   Start Brave with remote debugging, then:

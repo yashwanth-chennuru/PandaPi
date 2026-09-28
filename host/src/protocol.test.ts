@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createNativeDecoder, encodeNativeMessage, gmailComposeUrl, parseDataUrl, pickInitialModel } from "./protocol.ts";
+import { createNativeDecoder, encodeNativeMessage, gmailComposeUrl, parseDataUrl, pickInitialModel, resolvePandapiHome } from "./protocol.ts";
 
 test("native message roundtrip", () => {
   const decoder = createNativeDecoder();
@@ -48,4 +48,10 @@ test("pickInitialModel prefers the configured default", () => {
   expect(pickInitialModel(available, { provider: "opencode-go", id: "missing" })?.id).toBe("minimax-m3");
   expect(pickInitialModel(available, undefined)?.id).toBe("minimax-m3");
   expect(pickInitialModel([], { provider: "x", id: "y" })).toBeUndefined();
+});
+
+test("resolvePandapiHome defaults to ~/.pandapi and honors PANDAPI_HOME", () => {
+  expect(resolvePandapiHome({})).toContain(".pandapi");
+  expect(resolvePandapiHome({ PANDAPI_HOME: "  /tmp/custom  " })).toBe("/tmp/custom");
+  expect(resolvePandapiHome({ PANDAPI_HOME: "" })).toContain(".pandapi");
 });

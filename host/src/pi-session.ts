@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import {
   createAgentSession,
@@ -10,7 +9,7 @@ import {
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { BROWSER_SYSTEM_PROMPT, BROWSER_TOOL_NAMES, createBrowserTools, type BrowserBridge } from "./browser-tools.js";
-import { pickInitialModel, type AgentEvent, type TabContext } from "./protocol.js";
+import { pickInitialModel, resolvePandapiHome, type AgentEvent, type TabContext } from "./protocol.js";
 import { tryConnectStagehand, type StagehandHandle } from "./stagehand.js";
 
 export type PiController = {
@@ -61,7 +60,22 @@ function eventText(event: { type: string; [k: string]: unknown }): AgentEvent | 
 }
 
 export async function createPiController(bridge: BrowserBridge): Promise<PiController> {
-  const modelRuntime = await ModelRuntime.create();
+  // Everything PandaPi owns lives under this one directory. It is NOT
+  // ~/.pi/agent, so the browser agent and the Pi CLI stay fully independent.
+  const agentHome = resolvePandapiHome();
+  fs.mkdirSync(agentHome, { recursive: true });
+
+  const authPath = path.join(agentHome, "auth.json");
+  const modelsPath = path.join(agentHome, "models.json");
+  const modelsStorePath = path.join(agentHome, "models-store.json");
+  const modelRuntime = await ModelRuntime.create({
+    authPath,
+    modelsPath,
+    modelsStorePath,
+    // Populate PandaPi's own model catalog on first run, then reuse the cache.
+    allowModelNetwork: !fs.existsSync(modelsStorePath),
+    modelRefreshTimeoutMs: 8000,
+  });
   const available = await modelRuntime.getAvailable();
   const models = available.map((m) => ({
     provider: m.provider,
@@ -71,8 +85,7 @@ export async function createPiController(bridge: BrowserBridge): Promise<PiContr
 
   let warning: string | undefined;
   if (models.length === 0) {
-    warning =
-      "No Pi models with API keys found. Configure keys in ~/.pi/agent (same as the Pi CLI), then reopen the side panel.";
+    warning = `No API key found for PandaPi. Add one at ${authPath} (run "bun run set-key" in the PandaPi repo). PandaPi keeps its own key, separate from the Pi CLI.`;
   }
 
   let currentTab: TabContext | null = null;
@@ -86,8 +99,6 @@ export async function createPiController(bridge: BrowserBridge): Promise<PiContr
     supportsImages: () => Boolean(session?.model?.input?.includes("image")),
   });
 
-  const agentHome = path.join(os.homedir(), ".pi", "pandapi");
-  fs.mkdirSync(agentHome, { recursive: true });
   const loader = new DefaultResourceLoader({
     cwd: agentHome,
     agentDir: agentHome,
@@ -95,10 +106,8 @@ export async function createPiController(bridge: BrowserBridge): Promise<PiContr
   } as ConstructorParameters<typeof DefaultResourceLoader>[0]);
   await loader.reload();
 
-  // Read the user's real Pi defaults (provider/model) but keep agent resources
-  // sandboxed to agentHome so no global extensions/tools leak into the browser.
-  const globalAgentDir = path.join(os.homedir(), ".pi", "agent");
-  const settings = SettingsManager.create(agentHome, globalAgentDir);
+  // PandaPi's own settings (default provider/model). No CLI settings are read.
+  const settings = SettingsManager.create(agentHome, agentHome);
   const picked = pickInitialModel(available, {
     provider: settings.getDefaultProvider(),
     id: settings.getDefaultModel(),
