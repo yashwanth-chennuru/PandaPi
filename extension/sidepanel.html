@@ -13,9 +13,37 @@
         <span>PandaPi</span>
       </div>
       <div class="top-actions">
+        <button id="settingsBtn" class="icon-btn" title="API key and provider">&#9881;</button>
         <button id="newChat" class="icon-btn" title="New chat">+</button>
       </div>
     </header>
+
+    <section id="settings" class="settings hidden">
+      <div class="settings-head">
+        <strong>API key</strong>
+        <button id="settingsClose" class="icon-btn tiny" title="Close">×</button>
+      </div>
+      <p class="settings-note">
+        Used only by PandaPi, stored in <code>~/.pandapi</code>. Kept separate from the Pi CLI,
+        so you can monitor this agent in your provider dashboard on its own.
+      </p>
+      <label class="field">
+        <span>Provider</span>
+        <input id="keyProvider" type="text" value="opencode-go" spellcheck="false" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>API key</span>
+        <input id="keyValue" type="password" placeholder="paste key" spellcheck="false" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Default model <em>(optional)</em></span>
+        <input id="keyModel" type="text" placeholder="kimi-k2.6" spellcheck="false" autocomplete="off" />
+      </label>
+      <div class="settings-actions">
+        <button id="keySave" class="send">Save</button>
+        <span id="keyStatus" class="key-status"></span>
+      </div>
+    </section>
 
     <section class="chat-head">
       <div class="chat-title">Chat</div>

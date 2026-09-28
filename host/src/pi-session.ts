@@ -10,10 +10,19 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { BROWSER_SYSTEM_PROMPT, BROWSER_TOOL_NAMES, createBrowserTools, type BrowserBridge } from "./browser-tools.js";
 import { pickInitialModel, resolvePandapiHome, type AgentEvent, type TabContext } from "./protocol.js";
+import { storePandapiKey } from "./pandapi-store.js";
 import { tryConnectStagehand, type StagehandHandle } from "./stagehand.js";
 
+export type ModelSummary = { provider: string; id: string; name?: string };
+
+export type KeyResult = {
+  models: ModelSummary[];
+  model: { provider: string; id: string } | null;
+  warning?: string;
+};
+
 export type PiController = {
-  models: Array<{ provider: string; id: string; name?: string }>;
+  models: ModelSummary[];
   model: { provider: string; id: string } | null;
   stagehand: boolean;
   warning?: string;
@@ -21,6 +30,7 @@ export type PiController = {
   abort: () => Promise<void>;
   newSession: () => Promise<void>;
   setModel: (provider: string, modelId: string) => Promise<void>;
+  setKey: (provider: string, key: string, model?: string) => Promise<KeyResult>;
   dispose: () => Promise<void>;
 };
 
@@ -59,34 +69,37 @@ function eventText(event: { type: string; [k: string]: unknown }): AgentEvent | 
   return null;
 }
 
-export async function createPiController(bridge: BrowserBridge): Promise<PiController> {
-  // Everything PandaPi owns lives under this one directory. It is NOT
-  // ~/.pi/agent, so the browser agent and the Pi CLI stay fully independent.
-  const agentHome = resolvePandapiHome();
-  fs.mkdirSync(agentHome, { recursive: true });
-
-  const authPath = path.join(agentHome, "auth.json");
-  const modelsPath = path.join(agentHome, "models.json");
+async function createRuntime(agentHome: string) {
   const modelsStorePath = path.join(agentHome, "models-store.json");
-  const modelRuntime = await ModelRuntime.create({
-    authPath,
-    modelsPath,
+  return ModelRuntime.create({
+    authPath: path.join(agentHome, "auth.json"),
+    modelsPath: path.join(agentHome, "models.json"),
     modelsStorePath,
     // Populate PandaPi's own model catalog on first run, then reuse the cache.
     allowModelNetwork: !fs.existsSync(modelsStorePath),
     modelRefreshTimeoutMs: 8000,
   });
-  const available = await modelRuntime.getAvailable();
-  const models = available.map((m) => ({
-    provider: m.provider,
-    id: m.id,
-    name: (m as { name?: string }).name,
-  }));
+}
 
-  let warning: string | undefined;
-  if (models.length === 0) {
-    warning = `No API key found for PandaPi. Add one at ${authPath} (run "bun run set-key" in the PandaPi repo). PandaPi keeps its own key, separate from the Pi CLI.`;
-  }
+function toModels(available: readonly { provider: string; id: string; name?: string }[]): ModelSummary[] {
+  return available.map((m) => ({ provider: m.provider, id: m.id, name: m.name }));
+}
+
+function noKeyWarning(authPath: string): string {
+  return `No API key found for PandaPi. Add one with the key button in the panel (stored at ${authPath}). PandaPi keeps its own key, separate from the Pi CLI.`;
+}
+
+export async function createPiController(bridge: BrowserBridge): Promise<PiController> {
+  // Everything PandaPi owns lives under this one directory. It is NOT
+  // ~/.pi/agent, so the browser agent and the Pi CLI stay fully independent.
+  const agentHome = resolvePandapiHome();
+  fs.mkdirSync(agentHome, { recursive: true });
+  const authPath = path.join(agentHome, "auth.json");
+
+  let modelRuntime = await createRuntime(agentHome);
+  let available = await modelRuntime.getAvailable();
+  let models = toModels(available);
+  let warning: string | undefined = models.length === 0 ? noKeyWarning(authPath) : undefined;
 
   let currentTab: TabContext | null = null;
   let stagehand: StagehandHandle | null = await tryConnectStagehand();
@@ -107,8 +120,8 @@ export async function createPiController(bridge: BrowserBridge): Promise<PiContr
   await loader.reload();
 
   // PandaPi's own settings (default provider/model). No CLI settings are read.
-  const settings = SettingsManager.create(agentHome, agentHome);
-  const picked = pickInitialModel(available, {
+  let settings = SettingsManager.create(agentHome, agentHome);
+  let picked = pickInitialModel(available, {
     provider: settings.getDefaultProvider(),
     id: settings.getDefaultModel(),
   });
@@ -144,10 +157,18 @@ export async function createPiController(bridge: BrowserBridge): Promise<PiContr
   }
 
   return {
-    models,
-    model: picked ? { provider: picked.provider, id: picked.id } : null,
-    stagehand: Boolean(stagehand),
-    warning,
+    get models() {
+      return models;
+    },
+    get model() {
+      return picked ? { provider: picked.provider, id: picked.id } : null;
+    },
+    get stagehand() {
+      return Boolean(stagehand);
+    },
+    get warning() {
+      return warning;
+    },
     async prompt(id, text, tab, emit) {
       if (!session) {
         emit({ type: "error", message: warning ?? "Pi session is not ready." });
@@ -175,13 +196,40 @@ export async function createPiController(bridge: BrowserBridge): Promise<PiContr
       if (picked) await rebuildSession(session?.model ?? picked);
     },
     async setModel(provider, modelId) {
-      const model = modelRuntime.getModel(provider, modelId) ?? available.find((m) => m.provider === provider && m.id === modelId);
+      const model =
+        modelRuntime.getModel(provider, modelId) ?? available.find((m) => m.provider === provider && m.id === modelId);
       if (!model) throw new Error(`Unknown model ${provider}/${modelId}`);
       if (session) {
         await session.setModel(model);
+        picked = model;
       } else {
+        picked = model;
         await rebuildSession(model);
       }
+    },
+    async setKey(provider, key, model) {
+      storePandapiKey(agentHome, provider, key, model);
+      settings = SettingsManager.create(agentHome, agentHome);
+      modelRuntime = await createRuntime(agentHome);
+      available = await modelRuntime.getAvailable();
+      models = toModels(available);
+      picked = pickInitialModel(available, {
+        provider: model ? provider : settings.getDefaultProvider(),
+        id: model ?? settings.getDefaultModel(),
+      });
+      warning = models.length === 0 ? noKeyWarning(authPath) : undefined;
+      if (picked) {
+        await rebuildSession(picked);
+      } else {
+        unsubscribe?.();
+        session?.dispose();
+        session = undefined;
+      }
+      return {
+        models,
+        model: picked ? { provider: picked.provider, id: picked.id } : null,
+        warning,
+      };
     },
     async dispose() {
       unsubscribe?.();

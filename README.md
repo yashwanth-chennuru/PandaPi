@@ -30,6 +30,8 @@ bun run set-key      # prompts (hidden) for PandaPi's own API key; or pass --key
 bun run check-key    # confirms the key and lists the models PandaPi can use
 ```
 
+You can also set the key from inside the panel: click the gear (&#9881;) in the top-right, choose the provider, paste the key, and Save.
+
 The setup script points the `com.pandapi.host` manifest at *this* checkout, so re-run it if you move the folder or clone over an old install.
 
 Then in Brave:
@@ -59,7 +61,7 @@ bun run set-key --key sk-... --model kimi-k2.6   # or pass it directly
 bun run set-key --check                          # same as: bun run check-key
 ```
 
-`set-key` merges into `~/.pandapi/auth.json` (chmod `0600`) and never touches `~/.pi/agent`. Re-run it any time to rotate the key, then close and reopen the side panel so the native host restarts and picks it up.
+`set-key` merges into `~/.pandapi/auth.json` (chmod `0600`) and never touches `~/.pi/agent`. The same thing can be done without a terminal: the gear (&#9881;) button in the side panel opens a key form — pick the provider, paste the key, optionally set a default model, and Save. The host writes the file and reloads the agent live. Re-run `set-key` (or save again in the panel) any time to rotate the key.
 
 ## Optional Stagehand (same window)
 

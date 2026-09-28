@@ -10,11 +10,9 @@
  * ~/.pi/agent is never touched, so usage is attributed to this key alone.
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+import { resolvePandapiHome } from "../host/src/protocol.ts";
+import { storePandapiKey } from "../host/src/pandapi-store.ts";
 
 function parseArgs(argv) {
   const out = {};
@@ -49,24 +47,7 @@ Env fallbacks: PANDAPI_API_KEY, PANDAPI_PROVIDER, PANDAPI_MODEL, PANDAPI_HOME
 }
 
 function resolveHome(cliHome) {
-  return cliHome?.trim() || process.env.PANDAPI_HOME?.trim() || path.join(os.homedir(), ".pandapi");
-}
-
-function readJson(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return {};
-  }
-}
-
-function writeJson(file, value) {
-  fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
-  try {
-    fs.chmodSync(file, 0o600);
-  } catch {
-    /* best effort on platforms without chmod */
-  }
+  return cliHome?.trim() || resolvePandapiHome();
 }
 
 async function promptHidden(label) {
@@ -140,6 +121,7 @@ if (args.check) {
 }
 
 const provider = (args.provider || process.env.PANDAPI_PROVIDER || "opencode-go").trim();
+const model = (args.model || process.env.PANDAPI_MODEL || "").trim();
 let key = (args.key || process.env.PANDAPI_API_KEY || "").trim();
 if (!key) {
   key = await promptHidden(`Paste your ${provider} API key (input hidden): `);
@@ -150,19 +132,11 @@ if (!key) {
 }
 
 const authPath = path.join(agentHome, "auth.json");
-const auth = readJson(authPath);
-auth[provider] = { type: "api_key", key };
-writeJson(authPath, auth);
+storePandapiKey(agentHome, provider, key, model || undefined);
 console.log(`Wrote ${authPath} (provider: ${provider}, 0600).`);
 
-const model = (args.model || process.env.PANDAPI_MODEL || "").trim();
 if (model) {
-  const settingsPath = path.join(agentHome, "settings.json");
-  const settings = readJson(settingsPath);
-  settings.defaultProvider = provider;
-  settings.defaultModel = model;
-  writeJson(settingsPath, settings);
-  console.log(`Set default model: ${provider}/${model} (${settingsPath}).`);
+  console.log(`Set default model: ${provider}/${model} (${path.join(agentHome, "settings.json")}).`);
 }
 
 console.log(`

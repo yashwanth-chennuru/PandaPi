@@ -90,6 +90,22 @@ async function handle(msg: ClientMessage) {
 
   const c = await ensureController();
 
+  if (msg.type === "set_key") {
+    try {
+      const result = await c.setKey(msg.provider, msg.key, msg.model);
+      send({
+        type: "key_ok",
+        provider: msg.provider,
+        models: result.models,
+        model: result.model,
+        warning: result.warning,
+      });
+    } catch (err) {
+      send({ type: "key_error", message: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
   if (msg.type === "abort") {
     await c.abort();
     return;

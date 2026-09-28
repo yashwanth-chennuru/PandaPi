@@ -27,6 +27,7 @@ export type ClientMessage =
   | { type: "abort" }
   | { type: "new_session" }
   | { type: "set_model"; provider: string; modelId: string }
+  | { type: "set_key"; provider: string; key: string; model?: string }
   | { type: "browser_result"; id: string; ok: boolean; result?: unknown; error?: string };
 
 export type AgentEvent =
@@ -46,6 +47,14 @@ export type HostMessage =
       warning?: string;
     }
   | { type: "hello_error"; message: string }
+  | {
+      type: "key_ok";
+      provider: string;
+      models: Array<{ provider: string; id: string; name?: string }>;
+      model: { provider: string; id: string } | null;
+      warning?: string;
+    }
+  | { type: "key_error"; message: string }
   | { type: "event"; id: string; event: AgentEvent }
   | { type: "browser_request"; id: string; method: string; params: Record<string, unknown> };
 

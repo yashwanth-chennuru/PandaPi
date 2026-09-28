@@ -12,6 +12,9 @@ const tabUrl = document.getElementById("tabUrl");
 const tabFav = document.getElementById("tabFav");
 const shotWrap = document.getElementById("shotWrap");
 const shot = document.getElementById("shot");
+const settingsEl = document.getElementById("settings");
+const keyStatusEl = document.getElementById("keyStatus");
+const keyValueEl = document.getElementById("keyValue");
 
 let port = null;
 let attachedTab = null;
@@ -30,6 +33,27 @@ function setLive(ok) {
   statusDot.classList.toggle("err", ok === false && statusDot.dataset.err === "1");
 }
 
+function applyModelOptions(models, model) {
+  modelEl.replaceChildren();
+  for (const m of models || []) {
+    const opt = document.createElement("option");
+    opt.value = `${m.provider}/${m.id}`;
+    opt.textContent = m.name ? `${m.name} (${m.provider})` : `${m.provider}/${m.id}`;
+    if (model && m.provider === model.provider && m.id === model.id) opt.selected = true;
+    modelEl.appendChild(opt);
+  }
+  if (!models?.length) {
+    const opt = document.createElement("option");
+    opt.textContent = "No models — add a key";
+    modelEl.appendChild(opt);
+  }
+}
+
+function setKeyStatus(text, isError = false) {
+  keyStatusEl.textContent = text || "";
+  keyStatusEl.classList.toggle("error", isError);
+}
+
 function connect() {
   port = chrome.runtime.connect({ name: "pandapi-panel" });
   port.onMessage.addListener(onHost);
@@ -46,23 +70,22 @@ function onHost(msg) {
   if (msg.type === "hello_ok") {
     statusDot.dataset.err = "";
     setLive(true);
-    modelEl.replaceChildren();
-    for (const m of msg.models || []) {
-      const opt = document.createElement("option");
-      opt.value = `${m.provider}/${m.id}`;
-      opt.textContent = m.name ? `${m.name} (${m.provider})` : `${m.provider}/${m.id}`;
-      if (msg.model && m.provider === msg.model.provider && m.id === msg.model.id) opt.selected = true;
-      modelEl.appendChild(opt);
-    }
-    if (!msg.models?.length) {
-      const opt = document.createElement("option");
-      opt.textContent = "No Pi models";
-      modelEl.appendChild(opt);
-    }
+    applyModelOptions(msg.models, msg.model);
     const extra = [];
     if (msg.warning) extra.push(msg.warning);
     if (msg.stagehand) extra.push("Stagehand attached via local CDP.");
     showBanner(extra.join(" "), Boolean(msg.warning));
+    return;
+  }
+  if (msg.type === "key_ok") {
+    applyModelOptions(msg.models, msg.model);
+    keyValueEl.value = "";
+    setKeyStatus(`Saved. ${msg.models?.length ?? 0} model(s) available.`);
+    showBanner(msg.warning || "", Boolean(msg.warning));
+    return;
+  }
+  if (msg.type === "key_error") {
+    setKeyStatus(msg.message, true);
     return;
   }
   if (msg.type === "hello_error" || msg.type === "host_error") {
@@ -168,6 +191,23 @@ document.getElementById("newChat").addEventListener("click", () => {
 document.getElementById("detachTab").addEventListener("click", () => {
   attachedTab = null;
   tabCard.classList.add("hidden");
+});
+document.getElementById("settingsBtn").addEventListener("click", () => settingsEl.classList.toggle("hidden"));
+document.getElementById("settingsClose").addEventListener("click", () => settingsEl.classList.add("hidden"));
+document.getElementById("keySave").addEventListener("click", () => {
+  const provider = document.getElementById("keyProvider").value.trim() || "opencode-go";
+  const key = keyValueEl.value.trim();
+  const model = document.getElementById("keyModel").value.trim();
+  if (!key) {
+    setKeyStatus("Paste a key first.", true);
+    return;
+  }
+  if (!port) {
+    setKeyStatus("Not connected to the host.", true);
+    return;
+  }
+  setKeyStatus("Saving…");
+  port.postMessage({ type: "set_key", provider, key, model: model || undefined });
 });
 document.getElementById("clearShot").addEventListener("click", () => shotWrap.classList.add("hidden"));
 modelEl.addEventListener("change", () => {
