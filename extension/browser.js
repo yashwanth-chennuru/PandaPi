@@ -1,4 +1,4 @@
-import { clickRef, pressKey, snapshotPage, typeRef } from "./page-actions.js";
+import { clickRef, pressKey, readPageText, snapshotPage, typeRef } from "./page-actions.js";
 
 async function inject(tabId, func, args = []) {
   const [result] = await chrome.scripting.executeScript({
@@ -52,16 +52,26 @@ export async function handleBrowserMethod(method, params) {
     }
     case "screenshot": {
       const tab = await chrome.tabs.get(tabId);
-      await chrome.tabs.update(tabId, { active: true });
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+      if (!tab.active) {
+        await chrome.tabs.update(tabId, { active: true });
+        // Give the compositor a beat to paint the newly focused tab before capture.
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+        format: "jpeg",
+        quality: 80,
+      });
       return {
-        mimeType: "image/png",
+        mimeType: "image/jpeg",
         dataUrl,
-        note: "Screenshot captured. Shown in the PandaPi side panel. Not written to disk.",
+        note: "Screenshot captured. Shown in the PandaPi side panel and returned to the agent. Not written to disk.",
       };
     }
     case "snapshot": {
       return inject(tabId, snapshotPage);
+    }
+    case "page_text": {
+      return inject(tabId, readPageText);
     }
     case "click": {
       return inject(tabId, clickRef, [params.ref]);

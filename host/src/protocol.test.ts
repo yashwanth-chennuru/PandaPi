@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createNativeDecoder, encodeNativeMessage, gmailComposeUrl } from "./protocol.ts";
+import { createNativeDecoder, encodeNativeMessage, gmailComposeUrl, parseDataUrl, pickInitialModel } from "./protocol.ts";
 
 test("native message roundtrip", () => {
   const decoder = createNativeDecoder();
@@ -29,4 +29,23 @@ test("gmail compose url encodes to/subject/body", () => {
   expect(parsed.searchParams.get("to")).toBe("dad@gmail.com");
   expect(parsed.searchParams.get("su")).toBe("Ticket");
   expect(parsed.searchParams.get("body")).toBe("See screenshot");
+});
+
+test("parseDataUrl splits mime and base64", () => {
+  expect(parseDataUrl("data:image/jpeg;base64,AAAA")).toEqual({
+    mimeType: "image/jpeg",
+    base64: "AAAA",
+  });
+  expect(parseDataUrl("not-a-data-url")).toBeNull();
+});
+
+test("pickInitialModel prefers the configured default", () => {
+  const available = [
+    { provider: "opencode-go", id: "minimax-m3" },
+    { provider: "opencode-go", id: "kimi-k2.6" },
+  ];
+  expect(pickInitialModel(available, { provider: "opencode-go", id: "kimi-k2.6" })?.id).toBe("kimi-k2.6");
+  expect(pickInitialModel(available, { provider: "opencode-go", id: "missing" })?.id).toBe("minimax-m3");
+  expect(pickInitialModel(available, undefined)?.id).toBe("minimax-m3");
+  expect(pickInitialModel([], { provider: "x", id: "y" })).toBeUndefined();
 });

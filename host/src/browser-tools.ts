@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { gmailComposeUrl } from "./protocol.js";
+import { gmailComposeUrl, parseDataUrl } from "./protocol.js";
 import type { TabContext } from "./protocol.js";
 import type { StagehandHandle } from "./stagehand.js";
 
@@ -15,6 +15,7 @@ export const BROWSER_TOOL_NAMES = [
   "navigate",
   "screenshot",
   "snapshot",
+  "page_text",
   "click",
   "type_text",
   "press_key",
@@ -44,8 +45,10 @@ export function createBrowserTools(opts: {
   getTab: () => TabContext | null;
   bridge: BrowserBridge;
   getStagehand: () => StagehandHandle | null;
+  /** Whether the active model accepts image input (enables vision screenshots). */
+  supportsImages: () => boolean;
 }) {
-  const { getTab, bridge, getStagehand } = opts;
+  const { getTab, bridge, getStagehand, supportsImages } = opts;
 
   const tabs_list = defineTool({
     name: "tabs_list",
@@ -92,26 +95,35 @@ export function createBrowserTools(opts: {
   const screenshot = defineTool({
     name: "screenshot",
     label: "Screenshot",
-    description: "Capture a screenshot of the visible attached tab. Use this when the user asks to screenshot or to include the screen in an email.",
+    description:
+      "Capture a screenshot of the visible attached tab. When the current model supports vision, the image is returned to you so you can actually see the screen. It is always shown in the side panel too.",
     parameters: Type.Object({
       tabId: Type.Optional(Type.Number()),
     }),
     execute: async (_id, params) => {
       const result = (await bridge.call("screenshot", withTab(getTab(), params.tabId))) as {
         mimeType?: string;
+        dataUrl?: string;
         note?: string;
-        width?: number;
-        height?: number;
       };
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: result.note ?? `Screenshot captured (${result.width ?? "?"}x${result.height ?? "?"}, ${result.mimeType ?? "image"}). The image is in the side panel for the user.`,
-          },
-        ],
-        details: result,
-      };
+      const parsed = result.dataUrl ? parseDataUrl(result.dataUrl) : null;
+      if (parsed && supportsImages()) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Screenshot of the attached tab (${parsed.mimeType}). You can see it below as an image. It is also shown in the side panel.`,
+            },
+            { type: "image" as const, data: parsed.base64, mimeType: parsed.mimeType },
+          ],
+          details: { mimeType: parsed.mimeType, bytes: parsed.base64.length },
+        };
+      }
+      return textResult(
+        parsed
+          ? "Screenshot captured and shown in the side panel, but the current model cannot view images. Use snapshot or page_text to read the page, or switch to a vision-capable model."
+          : result.note ?? "Screenshot captured and shown in the side panel.",
+      );
     },
   });
 
@@ -124,6 +136,17 @@ export function createBrowserTools(opts: {
       tabId: Type.Optional(Type.Number()),
     }),
     execute: async (_id, params) => jsonResult(await bridge.call("snapshot", withTab(getTab(), params.tabId))),
+  });
+
+  const page_text = defineTool({
+    name: "page_text",
+    label: "Read page text",
+    description:
+      "Read the visible text of the attached page (title, URL, meta description, main text). Use this to summarize, answer questions, or find facts. Prefer this over snapshot when you need page content rather than clickable elements.",
+    parameters: Type.Object({
+      tabId: Type.Optional(Type.Number()),
+    }),
+    execute: async (_id, params) => jsonResult(await bridge.call("page_text", withTab(getTab(), params.tabId))),
   });
 
   const click = defineTool({
@@ -243,6 +266,7 @@ export function createBrowserTools(opts: {
     navigate,
     screenshot,
     snapshot,
+    page_text,
     click,
     type_text,
     press_key,
@@ -263,7 +287,9 @@ Hard limits:
 
 How to work:
 - The attached tab (title/url) is the default context. Use tabs_list if you need another tab.
-- For "what's on screen", screenshot and/or snapshot. Snapshot before click/type.
+- For "what's on screen", screenshot. On vision-capable models the image comes back to you; otherwise it is only shown in the side panel, so fall back to page_text/snapshot.
+- For "summarize this page", "what does it say", or any content question, call page_text first. Use snapshot only when you need to click or type.
+- Snapshot before click/type, and only use refs from the latest snapshot.
 - For "open a new tab", use tabs_create.
 - For Gmail: compose_gmail with the exact address the user gave. If they asked to include a screenshot, screenshot first, then compose. Tell them the screenshot is in the side panel to paste/attach; do not claim you attached a file unless a tool result says so.
 - Prefer the smallest action. Do not wander off-domain.

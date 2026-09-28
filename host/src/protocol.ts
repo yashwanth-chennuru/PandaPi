@@ -43,6 +43,7 @@ export type BrowserMethod =
   | "navigate"
   | "screenshot"
   | "snapshot"
+  | "page_text"
   | "click"
   | "type_text"
   | "press_key"
@@ -87,4 +88,27 @@ export function gmailComposeUrl(input: {
   if (input.subject) params.set("su", input.subject);
   if (input.body) params.set("body", input.body);
   return `https://mail.google.com/mail/?${params.toString()}`;
+}
+
+/** Split a `data:<mime>;base64,<payload>` URL into the parts a Pi image block needs. */
+export function parseDataUrl(dataUrl: string): { mimeType: string; base64: string } | null {
+  const match = /^data:([^;,]+);base64,(.*)$/s.exec(dataUrl);
+  if (!match) return null;
+  return { mimeType: match[1], base64: match[2] };
+}
+
+/**
+ * Pick the session's starting model. Prefers the user's Pi default
+ * (provider/model from `~/.pi/agent/settings.json`) and falls back to the
+ * first available model.
+ */
+export function pickInitialModel<T extends { provider: string; id: string }>(
+  available: readonly T[],
+  preferred: { provider?: string; id?: string } | undefined,
+): T | undefined {
+  if (preferred?.provider && preferred.id) {
+    const match = available.find((m) => m.provider === preferred.provider && m.id === preferred.id);
+    if (match) return match;
+  }
+  return available[0];
 }

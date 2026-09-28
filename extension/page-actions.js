@@ -75,6 +75,27 @@ export function snapshotPage() {
   return { title, url, count: items.length, text: lines.join("\n") };
 }
 
+/** Read the visible text of the page so the agent can summarize/answer questions. */
+export function readPageText() {
+  const maxChars = 14000;
+  const bodyText = document.body ? document.body.innerText || "" : "";
+  const text = bodyText
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  const truncated = text.length > maxChars;
+  const description = document.querySelector('meta[name="description"]')?.getAttribute("content") || undefined;
+  return {
+    title: document.title,
+    url: location.href,
+    description,
+    length: text.length,
+    truncated,
+    text: truncated ? text.slice(0, maxChars) : text,
+  };
+}
+
 export function clickRef(ref) {
   const el = document.querySelector(`[data-pandapi-ref="${CSS.escape(ref)}"]`);
   if (!el) return { ok: false, error: `No element ${ref}. Take a new snapshot.` };

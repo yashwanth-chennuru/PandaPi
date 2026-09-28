@@ -6,10 +6,11 @@ import {
   DefaultResourceLoader,
   ModelRuntime,
   SessionManager,
+  SettingsManager,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { BROWSER_SYSTEM_PROMPT, BROWSER_TOOL_NAMES, createBrowserTools, type BrowserBridge } from "./browser-tools.js";
-import type { AgentEvent, TabContext } from "./protocol.js";
+import { pickInitialModel, type AgentEvent, type TabContext } from "./protocol.js";
 import { tryConnectStagehand, type StagehandHandle } from "./stagehand.js";
 
 export type PiController = {
@@ -30,6 +31,17 @@ function eventText(event: { type: string; [k: string]: unknown }): AgentEvent | 
     if (inner?.type === "text_delta" && inner.delta) {
       return { type: "text_delta", text: inner.delta };
     }
+    return null;
+  }
+  if (event.type === "message_end") {
+    const message = event.message as { stopReason?: string; errorMessage?: string } | undefined;
+    if (message?.stopReason === "error" && message.errorMessage) {
+      return { type: "error", message: message.errorMessage };
+    }
+    if (message?.stopReason === "aborted") {
+      return { type: "error", message: "Aborted." };
+    }
+    return null;
   }
   if (event.type === "tool_execution_start") {
     return {
@@ -38,20 +50,12 @@ function eventText(event: { type: string; [k: string]: unknown }): AgentEvent | 
       detail: event.args ? JSON.stringify(event.args).slice(0, 300) : undefined,
     };
   }
-  if (event.type === "tool_call") {
+  if (event.type === "tool_execution_end") {
     return {
-      type: "tool_start",
+      type: "tool_end",
       name: String(event.toolName ?? "tool"),
+      detail: event.isError ? "failed" : undefined,
     };
-  }
-  if (event.type === "tool_execution_end" || event.type === "tool_result") {
-    return { type: "tool_end", name: String(event.toolName ?? event.name ?? "tool") };
-  }
-  if (event.type === "agent_end") {
-    return { type: "done" };
-  }
-  if (event.type === "error" || event.type === "agent_error") {
-    return { type: "error", message: String(event.error ?? event.message ?? "Agent error") };
   }
   return null;
 }
@@ -73,11 +77,13 @@ export async function createPiController(bridge: BrowserBridge): Promise<PiContr
 
   let currentTab: TabContext | null = null;
   let stagehand: StagehandHandle | null = await tryConnectStagehand();
+  let session: AgentSession | undefined;
 
   const tools = createBrowserTools({
     getTab: () => currentTab,
     bridge,
     getStagehand: () => stagehand,
+    supportsImages: () => Boolean(session?.model?.input?.includes("image")),
   });
 
   const agentHome = path.join(os.homedir(), ".pi", "pandapi");
@@ -89,8 +95,15 @@ export async function createPiController(bridge: BrowserBridge): Promise<PiContr
   } as ConstructorParameters<typeof DefaultResourceLoader>[0]);
   await loader.reload();
 
-  const picked = available[0];
-  let session: AgentSession | undefined;
+  // Read the user's real Pi defaults (provider/model) but keep agent resources
+  // sandboxed to agentHome so no global extensions/tools leak into the browser.
+  const globalAgentDir = path.join(os.homedir(), ".pi", "agent");
+  const settings = SettingsManager.create(agentHome, globalAgentDir);
+  const picked = pickInitialModel(available, {
+    provider: settings.getDefaultProvider(),
+    id: settings.getDefaultModel(),
+  });
+
   let unsubscribe: (() => void) | undefined;
   let emitCurrent: ((e: AgentEvent) => void) | undefined;
 

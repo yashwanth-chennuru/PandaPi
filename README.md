@@ -8,7 +8,7 @@ You already use Pi in the terminal. This is the same keys and models, with a cha
 
 - Side panel chat (right-hand panel via the toolbar button)
 - Current-tab context chip (dismissible)
-- Tools: list/create/switch tabs, navigate, screenshot, page snapshot, click/type by ref, Gmail **draft** (does not send)
+- Tools: list/create/switch tabs, navigate, screenshot (**returned to the model when it supports vision**), page snapshot, page text, click/type by ref, Gmail **draft** (does not send)
 - Cloud BYOK through Pi (`~/.pi/agent` auth), not through the extension
 - Optional [Stagehand](https://www.stagehand.dev/) **attach** if you already expose CDP on this browser (`PANDAPI_CDP_URL`). It never launches a second profile and never uses Browserbase.
 
@@ -25,9 +25,10 @@ The side panel is still a normal MV3 extension (the browser cannot run Bun). Bun
 ```bash
 git clone <this-repo> && cd PandaPi
 bun install
-bun ./scripts/install-native-host.mjs
-# after PR #2 is merged you can also: bun run setup-host
+bun run setup-host   # writes scripts/pandapi-host.sh + the Brave/Chrome native-messaging manifests
 ```
+
+The setup script points the `com.pandapi.host` manifest at *this* checkout, so re-run it if you move the folder or clone over an old install.
 
 Then in Brave:
 
