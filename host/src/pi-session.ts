@@ -5,6 +5,7 @@ import {
   SessionManager,
   SettingsManager,
   type AgentSession,
+  type AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent";
 import { BROWSER_SYSTEM_PROMPT, BROWSER_TOOL_NAMES, createBrowserTools, type ApprovalFn, type BrowserBridge, type SnapshotBinding } from "./browser-tools.js";
 import {
@@ -34,59 +35,46 @@ export type PiController = {
   dispose: () => Promise<void>;
 };
 
-function eventText(event: { type: string; [k: string]: unknown }): AgentEvent | null {
+function eventText(event: AgentSessionEvent): AgentEvent | null {
   if (event.type === "message_update") {
-    const inner = event.assistantMessageEvent as {
-      type?: string;
-      delta?: string;
-      text?: string;
-      error?: { errorMessage?: string; stopReason?: string };
-      reason?: string;
-    } | undefined;
-    if (inner?.type === "error") {
+    const inner = event.assistantMessageEvent;
+    if (inner.type === "error") {
       const msg =
-        inner.error?.errorMessage ||
+        inner.error.errorMessage ||
         inner.reason ||
         "LLM request failed. Check base URL, model id, and API key.";
       return { type: "error", message: String(msg) };
     }
-    const delta = inner?.delta || (inner?.type === "text" ? inner.text : undefined);
-    if (delta) return { type: "text_delta", text: delta };
+    if (inner.type === "text_delta" && inner.delta) {
+      return { type: "text_delta", text: inner.delta };
+    }
+    return null;
   }
   if (event.type === "message_end") {
-    const message = event.message as {
-      errorMessage?: string;
-      stopReason?: string;
-      content?: Array<{ type?: string; text?: string }>;
-    } | undefined;
-    if (message?.errorMessage) return { type: "error", message: message.errorMessage };
-    if (message?.stopReason === "error") {
+    if (event.message.role !== "assistant") return null;
+    const message = event.message;
+    if (message.errorMessage) return { type: "error", message: message.errorMessage };
+    if (message.stopReason === "error") {
       return { type: "error", message: "LLM returned an error (no details)." };
     }
+    return null;
   }
   if (event.type === "tool_execution_start") {
     return {
       type: "tool_start",
-      name: String(event.toolName ?? event.name ?? "tool"),
+      name: String(event.toolName ?? "tool"),
       detail: event.args ? JSON.stringify(event.args).slice(0, 300) : undefined,
     };
   }
-  if (event.type === "tool_call") {
-    return { type: "tool_start", name: String(event.toolName ?? "tool") };
-  }
-  if (event.type === "tool_execution_end" || event.type === "tool_result") {
+  if (event.type === "tool_execution_end") {
     const err = event.isError ? ` error: ${JSON.stringify(event.result).slice(0, 200)}` : "";
-    return { type: "tool_end", name: String(event.toolName ?? event.name ?? "tool"), detail: err || undefined };
+    return { type: "tool_end", name: String(event.toolName ?? "tool"), detail: err || undefined };
   }
   if (event.type === "auto_retry_start") {
     return {
       type: "error",
       message: `Retrying LLM (${String(event.attempt)}/${String(event.maxAttempts)}): ${String(event.errorMessage ?? "")}`,
     };
-  }
-  if (event.type === "agent_end") return null;
-  if (event.type === "error" || event.type === "agent_error") {
-    return { type: "error", message: String(event.error ?? event.message ?? "Agent error") };
   }
   return null;
 }
@@ -185,7 +173,7 @@ export async function createPiController(opts: {
     });
     session = result.session;
     unsubscribe = session.subscribe((event) => {
-      const mapped = eventText(event as unknown as { type: string; [k: string]: unknown });
+      const mapped = eventText(event);
       if (mapped) emitCurrent?.(mapped);
     });
   }

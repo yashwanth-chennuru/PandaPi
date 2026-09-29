@@ -152,7 +152,10 @@ The visual system comes from the [`scandinavian-design`](https://skills.sh/ericz
 ```bash
 bun test          # host unit tests (tools, config, host hello, extension guards)
 bun run typecheck # tsc --noEmit
+bun run lint      # oxlint, with a curated subset of the anti-slop rules
 ```
+
+Linting uses a **curated subset** of [dmmulroy/anti-slop](https://github.com/dmmulroy/anti-slop), vendored at `tools/oxlint/anti-slop/` and configured in `oxlint.config.ts`. Only rules that fit this project are enabled; the boundary-typing rules (`no-unknown-*`, `no-unsafe-dictionary-type`, `no-runtime-typeof`, …) are deliberately excluded. See `tools/oxlint/anti-slop/UPSTREAM.md` for provenance, the enabled list, and why the rest are off.
 
 After pulling changes, reload the unpacked extension in `brave://extensions` so the side panel picks up new code.
 
