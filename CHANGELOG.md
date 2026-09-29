@@ -5,7 +5,7 @@ All notable changes to PandaPi are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2026-09-29
+## 0.4.0 - 2026-09-29
 
 First public release, MIT licensed.
 
@@ -45,14 +45,14 @@ First public release, MIT licensed.
   dropped when no prompt is active.
 - Snapshot payload no longer sends page content to the model twice.
 
-## [0.3.1] - 2026-09-29
+## 0.3.1 - 2026-09-29
 
 ### Added
 
 - The loaded extension version is shown next to the PandaPi name, so it is
   obvious which build the panel is running.
 
-## [0.3.0] - 2026-09-29
+## 0.3.0 - 2026-09-29
 
 ### Changed
 
@@ -61,7 +61,7 @@ First public release, MIT licensed.
   spacing rhythm, and a single monochrome SVG icon set.
 - Settings became an overlay instead of pushing the conversation around.
 
-## [0.2.0] - 2026-08-29
+## 0.2.0 - 2026-08-29
 
 ### Added
 
@@ -75,16 +75,10 @@ First public release, MIT licensed.
 
 - Rebuilt the project as a browser-use agent built on snapshots and refs.
 
-## [0.1.0] - 2026-08-18
+## 0.1.0 - 2026-08-18
 
 ### Added
 
 - Initial browser-only Pi agent in a Brave/Chrome side panel: chat, current-tab
   context, tab tools, navigation, screenshot, page snapshot, click/type by ref,
   and Gmail drafts.
-
-[0.4.0]: https://github.com/yashwanth-chennuru/PandaPi/compare/v0.3.1...v0.4.0
-[0.3.1]: https://github.com/yashwanth-chennuru/PandaPi/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/yashwanth-chennuru/PandaPi/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/yashwanth-chennuru/PandaPi/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/yashwanth-chennuru/PandaPi/releases/tag/v0.1.0
