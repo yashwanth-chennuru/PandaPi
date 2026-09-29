@@ -5,18 +5,19 @@
  */
 
 export function runPageAction(action, arg1, arg2, arg3) {
-  const ATTR = "data-pandapi-ref";
+  // Refs live in this isolated world's global rather than in DOM attributes,
+  // so page scripts cannot read, move, or forge them. The isolated world's
+  // globalThis persists across executeScript calls until navigation.
+  const REF_STORE = "__pandapiRefsV1";
 
-  function clearRefs(root) {
-    if (!root) return;
-    try {
-      root.querySelectorAll(`[${ATTR}]`).forEach((el) => el.removeAttribute(ATTR));
-      root.querySelectorAll("*").forEach((el) => {
-        if (el.shadowRoot) clearRefs(el.shadowRoot);
-      });
-    } catch {
-      /* closed shadow */
-    }
+  function refMap() {
+    const g = globalThis;
+    if (!(g[REF_STORE] instanceof Map)) g[REF_STORE] = new Map();
+    return g[REF_STORE];
+  }
+
+  function clearRefs() {
+    refMap().clear();
   }
 
   function walkRoots(visit) {
@@ -36,25 +37,14 @@ export function runPageAction(action, arg1, arg2, arg3) {
   }
 
   function findRef(ref) {
-    let found = null;
-    const visit = (root) => {
-      if (!root || found) return;
-      try {
-        const el = root.querySelector(`[${ATTR}="${CSS.escape(ref)}"]`);
-        if (el) {
-          found = el;
-          return;
-        }
-        root.querySelectorAll("*").forEach((node) => {
-          if (found) return;
-          if (node.shadowRoot) visit(node.shadowRoot);
-        });
-      } catch {
-        /* closed shadow */
-      }
-    };
-    walkRoots(visit);
-    return found;
+    const map = refMap();
+    const el = map.get(ref);
+    if (!el) return null;
+    if (!el.isConnected) {
+      map.delete(ref);
+      return null;
+    }
+    return el;
   }
 
   function visibleText(root, limit) {
@@ -107,6 +97,7 @@ export function runPageAction(action, arg1, arg2, arg3) {
 
     const seen = new Set();
     const items = [];
+    const refs = refMap();
     let i = 0;
 
     const visit = (root) => {
@@ -122,7 +113,7 @@ export function runPageAction(action, arg1, arg2, arg3) {
 
           i += 1;
           const ref = `e${i}`;
-          el.setAttribute(ATTR, ref);
+          refs.set(ref, el);
           const tag = el.tagName.toLowerCase();
           const role = el.getAttribute("role") || tag;
           const type = (el.getAttribute("type") || "").toLowerCase();
@@ -188,7 +179,6 @@ export function runPageAction(action, arg1, arg2, arg3) {
       generation,
       count: items.length,
       items: shown,
-      pageText,
       text: lines.join("\n"),
     };
   }

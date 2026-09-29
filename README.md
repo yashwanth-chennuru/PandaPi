@@ -172,5 +172,7 @@ After pulling changes, reload the unpacked extension in `brave://extensions` so 
 
 - The agent has no shell, filesystem, or OS tools; it can only call the tools above.
 - The API key is stored at `~/.pandapi/models.json` with `0600` permissions and is never written to extension storage.
-- `compose_gmail` opens a draft only. Clicks that look like send / pay / delete / confirm, `Enter` presses, and submitting `type_text` all require explicit in-panel approval.
+- `compose_gmail` opens a draft only. Clicks that look like send / pay / delete / publish / confirm, `Enter` presses, submitting `type_text`, submit-type controls, and links to action endpoints (`mailto:`, `/checkout`, `/delete`, …) all require explicit in-panel approval — including icon-only buttons with no label.
+- Navigation is restricted to `http(s)` (and `about:blank`). `javascript:`, `data:`, `file:`, and extension URLs are refused.
+- Snapshot refs live in the extension's isolated world, not in page-readable DOM attributes, so page scripts cannot forge them.
 - Everything runs against the browser you already have; no second profile is launched.

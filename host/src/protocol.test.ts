@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createNativeDecoder, encodeNativeMessage, gmailComposeUrl } from "./protocol.ts";
+import { createNativeDecoder, encodeNativeMessage, gmailComposeUrl, assertNavigableUrl } from "./protocol.ts";
 import { isDangerousLabel, needsApproval } from "./danger.ts";
 import {
   pandapiHome,
@@ -56,6 +56,52 @@ test("dangerous labels cover confirm/continue euphemisms", () => {
   expect(needsApproval("type_text", "Search", { pressEnter: false })).toBe(false);
   expect(needsApproval("press_key", undefined, { key: "Enter" })).toBe(true);
   expect(needsApproval("press_key", undefined, { key: "Escape" })).toBe(false);
+});
+
+test("dangerous vocabulary covers publishing and wallet actions", () => {
+  for (const label of [
+    "Post",
+    "Publish",
+    "Tweet",
+    "Reply",
+    "Comment",
+    "Share",
+    "Save changes",
+    "Withdraw",
+    "Deposit",
+    "Swap",
+    "Connect wallet",
+    "Sign transaction",
+    "Mint",
+    "Stake",
+  ]) {
+    expect(isDangerousLabel(label)).toBe(true);
+  }
+  // Signing *in* is not dangerous; signing a transaction is.
+  expect(isDangerousLabel("Sign in")).toBe(false);
+  expect(isDangerousLabel("Learn more")).toBe(false);
+});
+
+test("submit-type and dangerous-href controls are gated without a label", () => {
+  expect(needsApproval("click", undefined, { type: "submit" })).toBe(true);
+  expect(needsApproval("click", "e12", { type: "submit" })).toBe(true);
+  expect(needsApproval("click", "e12", { href: "mailto:x@y.test" })).toBe(true);
+  expect(needsApproval("click", "e12", { href: "/checkout/step-2" })).toBe(true);
+  expect(needsApproval("click", "e12", { href: "/docs/intro" })).toBe(false);
+  expect(needsApproval("click", "Read more", { type: "button" })).toBe(false);
+  expect(needsApproval("click", undefined, {})).toBe(false);
+});
+
+test("assertNavigableUrl allows http(s) and about:blank only", () => {
+  expect(assertNavigableUrl("https://example.test/a?b=1")).toBe("https://example.test/a?b=1");
+  expect(assertNavigableUrl("http://example.test/")).toBe("http://example.test/");
+  expect(assertNavigableUrl("about:blank")).toBe("about:blank");
+  expect(() => assertNavigableUrl("javascript:alert(1)")).toThrow(/javascript:/);
+  expect(() => assertNavigableUrl("data:text/html,<h1>x</h1>")).toThrow(/data:/);
+  expect(() => assertNavigableUrl("file:///etc/passwd")).toThrow(/file:/);
+  expect(() => assertNavigableUrl("chrome://settings")).toThrow(/chrome:/);
+  expect(() => assertNavigableUrl("/relative/path")).toThrow(/absolute/);
+  expect(() => assertNavigableUrl("   ")).toThrow(/empty/);
 });
 
 test("isolated config writes under PANDAPI_HOME not ~/.pi", () => {

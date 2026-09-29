@@ -45,3 +45,26 @@ test("setup-host creates a Windows launcher path and fails closed on zero writes
   expect(src).toContain("process.exit(1)");
   expect(src).toContain("zero browser paths");
 });
+
+test("page-actions keeps refs out of the DOM", () => {
+  const src = readFileSync(path.join(ext, "page-actions.js"), "utf8");
+  expect(src).toContain("__pandapiRefsV1");
+  // Refs must not be page-readable/forgeable DOM attributes.
+  expect(src).not.toContain("data-pandapi-ref");
+  expect(src).not.toContain("setAttribute");
+});
+
+test("browser.js validates navigation schemes and captures JPEG", () => {
+  const src = readFileSync(path.join(ext, "browser.js"), "utf8");
+  expect(src).toContain("assertNavigable");
+  expect(src).toContain('format: "jpeg"');
+  expect(src).not.toContain("chrome://newtab");
+});
+
+test("host serializes control messages and clears stale approvals", () => {
+  const src = readFileSync(path.join(import.meta.dir, "../src/index.ts"), "utf8");
+  expect(src).toContain("approval_resolved");
+  expect(src).toMatch(/msg\.type === "new_session"[\s\S]*?enqueuePrompt/);
+  expect(src).toMatch(/msg\.type === "set_model"[\s\S]*?enqueuePrompt/);
+  expect(src).toMatch(/msg\.type === "set_config"[\s\S]*?enqueuePrompt/);
+});

@@ -206,3 +206,131 @@ test("navigate clears snapshot binding", async () => {
   await navigate.execute("t1", { url: "https://example.test/next" }, undefined, undefined, {} as never);
   expect(snap).toBeNull();
 });
+
+test("navigate rejects non-http(s) and relative URLs", async () => {
+  const tools = createBrowserTools({
+    getTab: () => tab,
+    bridge: {
+      async call() {
+        return { ok: true };
+      },
+    },
+    requestApproval: async () => true,
+    getSnapshot: () => null,
+    setSnapshot: () => {},
+  });
+  const navigate = tools.find((t) => t.name === "navigate");
+  if (!navigate) throw new Error("missing navigate");
+  const run = (url: string) => navigate.execute("t1", { url }, undefined, undefined, {} as never);
+  await expect(run("javascript:alert(1)")).rejects.toThrow(/javascript:/);
+  await expect(run("file:///etc/passwd")).rejects.toThrow(/file:/);
+  await expect(run("data:text/html,x")).rejects.toThrow(/data:/);
+  await expect(run("/relative/path")).rejects.toThrow(/absolute/);
+});
+
+test("tabs_create defaults to about:blank and rejects bad schemes", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const tools = createBrowserTools({
+    getTab: () => tab,
+    bridge: {
+      async call(method, params) {
+        calls.push({ method, params });
+        return { tabId: 2, windowId: 1, title: "", url: "" };
+      },
+    },
+    requestApproval: async () => true,
+    getSnapshot: () => null,
+    setSnapshot: () => {},
+  });
+  const create = tools.find((t) => t.name === "tabs_create");
+  if (!create) throw new Error("missing tabs_create");
+  await create.execute("t1", {}, undefined, undefined, {} as never);
+  expect(calls.at(-1)?.params.url).toBe("about:blank");
+  expect(calls.at(-1)?.params.windowId).toBe(1);
+  await expect(create.execute("t1", { url: "javascript:x" }, undefined, undefined, {} as never)).rejects.toThrow(
+    /javascript:/,
+  );
+});
+
+test("tabs_list scopes to the attached tab's window", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const tools = createBrowserTools({
+    getTab: () => ({ ...tab, windowId: 42 }),
+    bridge: {
+      async call(method, params) {
+        calls.push({ method, params });
+        return [];
+      },
+    },
+    requestApproval: async () => true,
+    getSnapshot: () => null,
+    setSnapshot: () => {},
+  });
+  const list = tools.find((t) => t.name === "tabs_list");
+  if (!list) throw new Error("missing tabs_list");
+  await list.execute("t1", {}, undefined, undefined, {} as never);
+  expect(calls[0]?.method).toBe("tabs_list");
+  expect(calls[0]?.params.windowId).toBe(42);
+});
+
+test("snapshot returns only the formatted text to the model", async () => {
+  const tools = createBrowserTools({
+    getTab: () => tab,
+    bridge: {
+      async call(method) {
+        if (method === "snapshot") {
+          return {
+            title: "T",
+            url: tab.url,
+            generation: "g1",
+            count: 1,
+            items: [{ ref: "e1", name: "Go", role: "button" }],
+            pageText: "RAW PAGE TEXT",
+            text: "FORMATTED SNAPSHOT TEXT",
+          };
+        }
+        return {};
+      },
+    },
+    requestApproval: async () => true,
+    getSnapshot: () => null,
+    setSnapshot: () => {},
+  });
+  const snapshot = tools.find((t) => t.name === "snapshot");
+  if (!snapshot) throw new Error("missing snapshot");
+  const result = await snapshot.execute("t1", {}, undefined, undefined, {} as never);
+  const text = result.content.map((c) => ("text" in c ? c.text : "")).join("");
+  expect(text).toContain("FORMATTED SNAPSHOT TEXT");
+  expect(text).not.toContain("RAW PAGE TEXT");
+  expect(text).not.toContain("items");
+});
+
+test("click on an unlabeled submit control still asks for approval", async () => {
+  let snap: SnapshotBinding | null = bind([{ ref: "e9" }]);
+  let asked = false;
+  const tools = createBrowserTools({
+    getTab: () => tab,
+    bridge: {
+      async call(method) {
+        if (method === "describe") return { ok: true, tag: "button", type: "submit", url: tab.url };
+        if (method === "click") return { ok: true };
+        if (method === "snapshot") return { ...snap, items: snap?.items ?? [], text: "snap" };
+        return {};
+      },
+    },
+    requestApproval: async () => {
+      asked = true;
+      return false;
+    },
+    getSnapshot: () => snap,
+    setSnapshot: (next) => {
+      snap = next;
+    },
+  });
+  const click = tools.find((t) => t.name === "click");
+  if (!click) throw new Error("missing click");
+  const result = await click.execute("t1", { ref: "e9" }, undefined, undefined, {} as never);
+  expect(asked).toBe(true);
+  const text = result.content.map((c) => ("text" in c ? c.text : "")).join("");
+  expect(text).toContain("denied");
+});

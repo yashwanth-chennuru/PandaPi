@@ -51,7 +51,8 @@ export type HostMessage =
       params: Record<string, unknown>;
       panelId?: string;
     }
-  | { type: "approval_request"; id: string; summary: string; panelId?: string };
+  | { type: "approval_request"; id: string; summary: string; panelId?: string }
+  | { type: "approval_resolved"; id: string; allow: boolean; panelId?: string };
 
 export type BrowserMethod =
   | "tabs_list"
@@ -107,4 +108,26 @@ export function gmailComposeUrl(input: {
   if (input.subject) params.set("su", input.subject);
   if (input.body) params.set("body", input.body);
   return `https://mail.google.com/mail/?${params.toString()}`;
+}
+
+/**
+ * Validate a URL before it is handed to `chrome.tabs` navigation.
+ * Only http(s) and the scriptable `about:blank` are allowed, so a
+ * prompt-injected model cannot navigate to `javascript:`, `data:`, `file:`,
+ * extension pages, or a relative path it does not control.
+ */
+export function assertNavigableUrl(raw: string): string {
+  const value = raw.trim();
+  if (!value) throw new Error("Refusing to navigate: empty URL.");
+  if (value === "about:blank") return value;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`Refusing to navigate: not an absolute URL: ${raw}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Refusing to navigate to a ${parsed.protocol} URL. Only http(s) is allowed.`);
+  }
+  return parsed.toString();
 }

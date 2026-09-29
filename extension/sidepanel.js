@@ -166,6 +166,17 @@ function onHost(msg) {
     bumpProgressWatch();
     return;
   }
+  if (msg.type === "approval_resolved") {
+    if (pendingApprovalId === msg.id) {
+      pendingApprovalId = null;
+      approvalEl.classList.add("hidden");
+      appendLine(
+        msg.allow ? "Approval granted." : "Approval expired — that action was stopped.",
+        "tool",
+      );
+    }
+    return;
+  }
   if (msg.type === "event") {
     // Only handle events for our active prompt (ignore other panels / stale ids)
     if (activePromptId && msg.id !== activePromptId && msg.id !== "host") return;

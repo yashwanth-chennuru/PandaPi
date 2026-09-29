@@ -46,10 +46,13 @@ const bridge: BrowserBridge = {
 
 const requestApproval: ApprovalFn = (summary) => {
   const id = `a${++approvalCounter}`;
-  send({ type: "approval_request", id, summary, panelId: activePanelId });
+  const panelId = activePanelId;
+  send({ type: "approval_request", id, summary, panelId });
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       approvals.delete(id);
+      // Tell the owning panel so a stale Approve/Deny card is cleared.
+      send({ type: "approval_resolved", id, allow: false, panelId });
       resolve(false);
     }, 120_000);
     approvals.set(id, {
@@ -147,16 +150,24 @@ async function handle(msg: ClientMessage) {
     return;
   }
   if (msg.type === "new_session") {
-    await c.newSession();
+    await enqueuePrompt(async () => {
+      await c.newSession();
+    });
     return;
   }
   if (msg.type === "set_model") {
-    await c.setModel(msg.provider, msg.modelId);
+    await enqueuePrompt(async () => {
+      await c.setModel(msg.provider, msg.modelId);
+    });
     return;
   }
   if (msg.type === "set_config") {
     try {
-      await c.setConfig(msg.baseUrl, msg.apiKey, msg.modelId);
+      // Control messages rebuild the session, so they must not run while a
+      // prompt is in flight. The prompt chain serializes them behind it.
+      await enqueuePrompt(async () => {
+        await c.setConfig(msg.baseUrl, msg.apiKey, msg.modelId);
+      });
       send(helloPayload(c, msg.panelId));
     } catch (err) {
       send({
@@ -187,11 +198,14 @@ process.stdin.on("data", (chunk) => {
   try {
     for (const msg of decoder.push(Buffer.from(chunk))) {
       void handle(msg as ClientMessage).catch((err) => {
+        // Tag the error with the requesting panel when the message carries one;
+        // otherwise the background cannot route it and the failure is silent.
+        const panelId = (msg as { panelId?: string }).panelId ?? activePanelId;
         send({
           type: "event",
           id: "host",
           event: { type: "error", message: err instanceof Error ? err.message : String(err) },
-          panelId: activePanelId,
+          panelId,
         });
       });
     }

@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { needsApproval } from "./danger.js";
-import { gmailComposeUrl, type TabContext } from "./protocol.js";
+import { assertNavigableUrl, gmailComposeUrl, type TabContext } from "./protocol.js";
 
 export type BrowserBridge = {
   call: (method: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -62,6 +62,11 @@ function itemLabel(item: SnapshotItem | undefined, fallback: string): string {
   return (item?.name || item?.role || fallback).trim();
 }
 
+function controlDescriptor(live: { tag?: string; type?: string }): string {
+  const bits = [live.tag, live.type].filter(Boolean);
+  return bits.length ? bits.join(" ") : "control";
+}
+
 export function createBrowserTools(opts: {
   getTab: () => TabContext | null;
   bridge: BrowserBridge;
@@ -87,6 +92,19 @@ export function createBrowserTools(opts: {
       items: obj.items,
     });
     return raw;
+  };
+
+  /**
+   * The formatted snapshot text is the only part the model needs; `items` and
+   * the raw page text are kept host-side for ref resolution. Returning the
+   * whole payload here would send the page content to the LLM twice.
+   */
+  const snapshotText = (raw: unknown): string => {
+    if (raw && typeof raw === "object" && "text" in raw) {
+      const text = (raw as { text?: unknown }).text;
+      if (typeof text === "string") return text;
+    }
+    return typeof raw === "string" ? raw : JSON.stringify(raw);
   };
 
   const resolveRef = async (ref: string, tabId: number) => {
@@ -127,21 +145,29 @@ export function createBrowserTools(opts: {
   const tabs_list = defineTool({
     name: "tabs_list",
     label: "List tabs",
-    description: "List open tabs in the current browser window.",
+    description: "List open tabs in the attached tab's window.",
     parameters: Type.Object({}),
-    execute: async () => jsonResult(await bridge.call("tabs_list", {})),
+    execute: async () => {
+      const tab = getTab();
+      return jsonResult(await bridge.call("tabs_list", tab ? { windowId: tab.windowId } : {}));
+    },
   });
 
   const tabs_create = defineTool({
     name: "tabs_create",
     label: "New tab",
-    description: "Open a new tab. Optionally navigate it to a URL.",
+    description: "Open a new tab in the attached tab's window. Optionally navigate it to a URL.",
     parameters: Type.Object({
-      url: Type.Optional(Type.String({ description: "URL to open." })),
+      url: Type.Optional(Type.String({ description: "URL to open. Defaults to about:blank." })),
       active: Type.Optional(Type.Boolean()),
     }),
-    execute: async (_id, params) =>
-      jsonResult(await bridge.call("tabs_create", { url: params.url, active: params.active })),
+    execute: async (_id, params) => {
+      const url = params.url ? assertNavigableUrl(params.url) : "about:blank";
+      const tab = getTab();
+      return jsonResult(
+        await bridge.call("tabs_create", { url, active: params.active, windowId: tab?.windowId }),
+      );
+    },
   });
 
   const tabs_activate = defineTool({
@@ -167,7 +193,8 @@ export function createBrowserTools(opts: {
     }),
     execute: async (_id, params) => {
       setSnapshot(null);
-      return jsonResult(await bridge.call("navigate", { ...withTab(getTab(), params.tabId), url: params.url }));
+      const url = assertNavigableUrl(params.url);
+      return jsonResult(await bridge.call("navigate", { ...withTab(getTab(), params.tabId), url }));
     },
   });
 
@@ -207,7 +234,9 @@ export function createBrowserTools(opts: {
     }),
     execute: async (_id, params) => {
       const { tabId } = withTab(getTab(), params.tabId);
-      return jsonResult(rememberSnapshot(await bridge.call("snapshot", { tabId }), tabId));
+      const raw = await bridge.call("snapshot", { tabId });
+      rememberSnapshot(raw, tabId);
+      return jsonResult(snapshotText(raw));
     },
   });
 
@@ -221,16 +250,17 @@ export function createBrowserTools(opts: {
     }),
     execute: async (_id, params) => {
       const { tabId } = withTab(getTab(), params.tabId);
-      const { label } = await resolveRef(params.ref, tabId);
-      if (needsApproval("click", label)) {
+      const { label, live } = await resolveRef(params.ref, tabId);
+      if (needsApproval("click", label, { tag: live.tag, type: live.type, href: live.href })) {
         const ok = await requestApproval(
-          `Click “${label}” (${params.ref}) on tab ${tabId}? This looks like send, pay, delete, or confirm.`,
+          `Click “${label}” (${params.ref}, <${controlDescriptor(live)}>) on tab ${tabId}? This looks like send, pay, delete, publish, or confirm.`,
         );
         if (!ok) return textResult("User denied this click.");
       }
       const clicked = await bridge.call("click", { tabId, ref: params.ref });
-      const snap = rememberSnapshot(await bridge.call("snapshot", { tabId }), tabId);
-      return jsonResult({ clicked, snapshot: snap });
+      const raw = await bridge.call("snapshot", { tabId });
+      rememberSnapshot(raw, tabId);
+      return jsonResult({ clicked, snapshot: snapshotText(raw) });
     },
   });
 
@@ -247,12 +277,12 @@ export function createBrowserTools(opts: {
     execute: async (_id, params) => {
       const { tabId } = withTab(getTab(), params.tabId);
       const pressEnter = Boolean(params.pressEnter);
-      const { label } = await resolveRef(params.ref, tabId);
-      if (needsApproval("type_text", label, { pressEnter })) {
+      const { label, live } = await resolveRef(params.ref, tabId);
+      if (needsApproval("type_text", label, { pressEnter, tag: live.tag, type: live.type, href: live.href })) {
         const ok = await requestApproval(
           pressEnter
-            ? `Type into “${label}” (${params.ref}) and press Enter (may submit)?`
-            : `Type into “${label}” (${params.ref})?`,
+            ? `Type into “${label}” (${params.ref}, <${controlDescriptor(live)}>) and press Enter (may submit)?`
+            : `Type into “${label}” (${params.ref}, <${controlDescriptor(live)}>)?`,
         );
         if (!ok) return textResult("User denied this typing action.");
       }
@@ -262,8 +292,9 @@ export function createBrowserTools(opts: {
         text: params.text,
         pressEnter,
       });
-      const snap = rememberSnapshot(await bridge.call("snapshot", { tabId }), tabId);
-      return jsonResult({ typed, snapshot: snap });
+      const raw = await bridge.call("snapshot", { tabId });
+      rememberSnapshot(raw, tabId);
+      return jsonResult({ typed, snapshot: snapshotText(raw) });
     },
   });
 
@@ -296,8 +327,9 @@ export function createBrowserTools(opts: {
     execute: async (_id, params) => {
       const { tabId } = withTab(getTab(), params.tabId);
       const scrolled = await bridge.call("scroll", { tabId, direction: params.direction });
-      const snap = rememberSnapshot(await bridge.call("snapshot", { tabId }), tabId);
-      return jsonResult({ scrolled, snapshot: snap });
+      const raw = await bridge.call("snapshot", { tabId });
+      rememberSnapshot(raw, tabId);
+      return jsonResult({ scrolled, snapshot: snapshotText(raw) });
     },
   });
 
@@ -315,8 +347,9 @@ export function createBrowserTools(opts: {
         tabId,
         ms: Math.min(Math.max(params.ms ?? 1200, 0), 15_000),
       });
-      const snap = rememberSnapshot(await bridge.call("snapshot", { tabId }), tabId);
-      return jsonResult({ waited, snapshot: snap });
+      const raw = await bridge.call("snapshot", { tabId });
+      rememberSnapshot(raw, tabId);
+      return jsonResult({ waited, snapshot: snapshotText(raw) });
     },
   });
 

@@ -53,6 +53,10 @@ function routeHostMessage(msg) {
       if (sendToPanel(owner, msg)) return true;
     }
   }
+  if (msg?.type === "approval_resolved") {
+    approvalOwner.delete(msg.id);
+    if (msg.panelId && sendToPanel(msg.panelId, msg)) return true;
+  }
   if (msg?.type === "hello_ok" || msg?.type === "hello_error") {
     if (msg.panelId && sendToPanel(msg.panelId, msg)) return true;
     broadcast(msg);

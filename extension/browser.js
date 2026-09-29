@@ -1,5 +1,21 @@
 import { runPageAction } from "./page-actions.js";
 
+/** Only http(s) and the scriptable about:blank may be navigated to. */
+function assertNavigable(url) {
+  const value = String(url || "").trim();
+  if (value === "about:blank") return value;
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`Refusing to navigate to a non-absolute URL: ${value}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Refusing to navigate to a ${parsed.protocol} URL (only http/https).`);
+  }
+  return parsed.toString();
+}
+
 async function inject(tabId, action, args = []) {
   try {
     const [result] = await chrome.scripting.executeScript({
@@ -85,11 +101,11 @@ export async function handleBrowserMethod(method, params) {
       return tabs.filter((t) => t.id != null).map(tabInfo);
     }
     case "tabs_create": {
-      const tab = await chrome.tabs.create({
-        url: params.url || "chrome://newtab/",
-        active: params.active !== false,
-      });
-      if (tab.id && params.url) await waitTabComplete(tab.id);
+      const url = assertNavigable(params.url || "about:blank");
+      const props = { url, active: params.active !== false };
+      if (params.windowId) props.windowId = params.windowId;
+      const tab = await chrome.tabs.create(props);
+      if (tab.id && url !== "about:blank") await waitTabComplete(tab.id);
       return tabInfo(await chrome.tabs.get(tab.id));
     }
     case "tabs_activate": {
@@ -99,15 +115,18 @@ export async function handleBrowserMethod(method, params) {
       return tabInfo(await chrome.tabs.get(tabId));
     }
     case "navigate": {
-      await chrome.tabs.update(tabId, { url: params.url });
+      await chrome.tabs.update(tabId, { url: assertNavigable(params.url) });
       const tab = await waitTabComplete(tabId);
       return tabInfo(tab);
     }
     case "screenshot": {
       return withFocusRestored(tabId, async (tab) => {
-        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+          format: "jpeg",
+          quality: 80,
+        });
         return {
-          mimeType: "image/png",
+          mimeType: "image/jpeg",
           dataUrl,
           tabId,
           url: tab.url || "",
