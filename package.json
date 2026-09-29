@@ -1,10 +1,29 @@
 {
   "name": "pandapi",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.14",
   "description": "Browser-use agent in a Brave/Chrome side panel (isolated Pi harness)",
+  "license": "MIT",
+  "author": "Yashwanth Chennuru",
+  "homepage": "https://github.com/yashwanth-chennuru/PandaPi#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yashwanth-chennuru/PandaPi.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yashwanth-chennuru/PandaPi/issues"
+  },
+  "keywords": [
+    "browser-agent",
+    "browser-use",
+    "chrome-extension",
+    "brave",
+    "side-panel",
+    "pi",
+    "bun"
+  ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "oxlint",

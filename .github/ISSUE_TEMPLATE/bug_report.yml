@@ -1,0 +1,73 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Security issues must not be reported here** — see [SECURITY.md](https://github.com/yashwanth-chennuru/PandaPi/blob/main/SECURITY.md).
+
+  - type: input
+    id: version
+    attributes:
+      label: PandaPi version
+      description: Shown next to the PandaPi name at the top of the side panel (e.g. v0.4.0).
+      placeholder: v0.4.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Brave
+        - Chrome
+        - Chromium
+        - Other (say which below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Ask the agent to ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Panel output or errors
+      description: Paste anything the panel showed, including tool lines.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I reloaded the extension in the browser's extensions page and reopened the panel.
+          required: true
+        - label: I ran `bun run setup-host` and fully restarted the browser.
+          required: false

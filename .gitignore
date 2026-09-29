@@ -12,3 +12,8 @@ scripts/pandapi-host.cmd
 REVIEW.md
 Review.md
 review.md
+
+# Local agent tooling (not distributed — third-party skills may be unlicensed)
+.agents/
+.claude/
+skills-lock.json

@@ -1,5 +1,9 @@
 # PandaPi
 
+[![CI](https://github.com/yashwanth-chennuru/PandaPi/actions/workflows/ci.yml/badge.svg)](https://github.com/yashwanth-chennuru/PandaPi/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Bun](https://img.shields.io/badge/bun-%E2%89%A51.2-black.svg)](https://bun.sh)
+
 A **browser-use agent** in a Brave/Chrome **side panel**. It drives the window you are already looking at: snapshot the page, click/type by ref, switch tabs, scroll, wait, screenshot. The planner is an isolated [Pi](https://github.com/earendil-works/pi) harness. The only cloud traffic is your LLM.
 
 ## What it is for
@@ -36,7 +40,7 @@ Then in Brave:
 
 1. `brave://extensions` → enable **Developer mode**.
 2. **Load unpacked** → the `extension/` folder in this repo.  
-   The extension ID is pinned to `kdocghhgibkeiaojckijeocmppbealaa` so native messaging can find it.
+   The extension ID is pinned to `kdocghhgibkeiaojckijeocmppbealaa` so native messaging can find it. Forking? See [CONTRIBUTING](CONTRIBUTING.md#forks-and-the-pinned-extension-id).
 3. Click the PandaPi icon to open the side panel.
 4. **⚙ Settings** → paste the base URL, API key, and model id → **Save**.
 
@@ -148,7 +152,11 @@ The side panel follows a restrained Scandinavian system: a near-black canvas, a 
 - One inline SVG icon set at a single stroke weight; no emoji or icon fonts.
 - Semantic color only: `--ok` for the live dot, `--danger` for errors.
 
-The visual system comes from the [`scandinavian-design`](https://skills.sh/ericzakariasson/scandinavian-design) skill, installed under `.agents/skills/`.
+The visual system came from the `scandinavian-design` skill. It is **not vendored** here because the upstream skill has no license; install it locally if you want the same reference:
+
+```bash
+npx skills add ericzakariasson/scandinavian-design
+```
 
 ## Development
 
@@ -179,3 +187,17 @@ After pulling changes, reload the unpacked extension in `brave://extensions` so 
 - Navigation is restricted to `http(s)` (and `about:blank`). `javascript:`, `data:`, `file:`, and extension URLs are refused.
 - Snapshot refs live in the extension's isolated world, not in page-readable DOM attributes, so page scripts cannot forge them.
 - Everything runs against the browser you already have; no second profile is launched.
+
+## Contributing
+
+Contributions are welcome. Setup, checks, and guidelines are in [CONTRIBUTING.md](CONTRIBUTING.md). Every pull request must pass `bun run typecheck`, `bun run lint`, and `bun test`.
+
+## Security
+
+PandaPi reads the page you are on, sends it to your LLM, and can click and type in your real profile. If you find a way past its controls, please report it privately — see [SECURITY.md](SECURITY.md). Do not open a public issue for security problems.
+
+## License
+
+[MIT](LICENSE) © Yashwanth Chennuru. Third-party material is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Release history lives in [CHANGELOG.md](CHANGELOG.md).
