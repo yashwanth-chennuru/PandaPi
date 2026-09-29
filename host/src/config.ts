@@ -118,6 +118,22 @@ export function writeLlmConfig(cfg: LlmConfig, home = pandapiHome()): void {
   chmodSafe(home, 0o700);
 }
 
+/**
+ * Prompt-cache retention for the provider request.
+ *
+ * Pi defaults to "short" (in-memory caching, no extra request field). "long"
+ * (24h) is opt-in because some OpenAI-compatible endpoints reject the
+ * `prompt_cache_retention` field. Set `PANDAPI_CACHE_RETENTION=long` to enable.
+ */
+export function resolveCacheRetention(
+  env: NodeJS.ProcessEnv = process.env,
+): "short" | "long" | undefined {
+  const requested = (env.PANDAPI_CACHE_RETENTION || env.PI_CACHE_RETENTION || "").trim().toLowerCase();
+  if (requested === "long") return "long";
+  if (requested === "short") return "short";
+  return undefined;
+}
+
 export function publicConfig(cfg: LlmConfig | null): {
   baseUrl: string;
   modelId: string;

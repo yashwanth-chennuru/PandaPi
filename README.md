@@ -74,6 +74,9 @@ You can also seed the host process instead of using the panel:
 | `PANDAPI_API_KEY` / `OPENAI_API_KEY` | API key seed |
 | `PANDAPI_BASE_URL` / `OPENAI_BASE_URL` | Base URL seed |
 | `PANDAPI_MODEL` | Model id seed |
+| `PANDAPI_CACHE_RETENTION` | Prompt-cache retention: `short` (default, in-memory) or `long` (24h). Opt-in because some endpoints reject the retention field |
+
+The system prompt and tool list are static, so providers with prompt caching can cache them. Snapshots are deduplicated too: the page text is sent once and only resent when it changes, and a post-action snapshot that finds an unchanged page returns a one-line notice instead of repeating the page.
 
 ## Tools
 

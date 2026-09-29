@@ -6,6 +6,7 @@ import {
   writeLlmConfig,
   readLlmConfig,
   publicConfig,
+  resolveCacheRetention,
   PROVIDER_ID,
   ensureHome,
 } from "./config.ts";
@@ -102,6 +103,14 @@ test("assertNavigableUrl allows http(s) and about:blank only", () => {
   expect(() => assertNavigableUrl("chrome://settings")).toThrow(/chrome:/);
   expect(() => assertNavigableUrl("/relative/path")).toThrow(/absolute/);
   expect(() => assertNavigableUrl("   ")).toThrow(/empty/);
+});
+
+test("resolveCacheRetention is opt-in and defaults to Pi's short cache", () => {
+  expect(resolveCacheRetention({})).toBeUndefined();
+  expect(resolveCacheRetention({ PANDAPI_CACHE_RETENTION: "long" })).toBe("long");
+  expect(resolveCacheRetention({ PANDAPI_CACHE_RETENTION: "SHORT" })).toBe("short");
+  expect(resolveCacheRetention({ PI_CACHE_RETENTION: "long" })).toBe("long");
+  expect(resolveCacheRetention({ PANDAPI_CACHE_RETENTION: "nonsense" })).toBeUndefined();
 });
 
 test("isolated config writes under PANDAPI_HOME not ~/.pi", () => {

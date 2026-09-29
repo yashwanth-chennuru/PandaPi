@@ -31,6 +31,24 @@ export type SnapshotBinding = {
   url: string;
   generation: string;
   items: SnapshotItem[];
+  /** Whole-page fingerprint (structure + text) from the last snapshot. */
+  fingerprint?: string;
+  /** Page-text-only fingerprint from the last snapshot. */
+  textFingerprint?: string;
+};
+
+type SnapshotRaw = {
+  items?: SnapshotItem[];
+  url?: string;
+  generation?: string;
+  tabId?: number;
+  /** Precomposed text from an older payload shape. */
+  text?: string;
+  header?: string;
+  pageText?: string;
+  interactiveText?: string;
+  fingerprint?: string;
+  textFingerprint?: string;
 };
 
 function textResult(text: string) {
@@ -78,33 +96,58 @@ export function createBrowserTools(opts: {
 
   const rememberSnapshot = (raw: unknown, tabId: number): unknown => {
     if (!raw || typeof raw !== "object") return raw;
-    const obj = raw as {
-      items?: SnapshotItem[];
-      url?: string;
-      generation?: string;
-      tabId?: number;
-    };
+    const obj = raw as SnapshotRaw;
     if (!Array.isArray(obj.items)) return raw;
     setSnapshot({
       tabId: obj.tabId ?? tabId,
       url: obj.url || "",
       generation: obj.generation || `${Date.now()}`,
       items: obj.items,
+      fingerprint: obj.fingerprint,
+      textFingerprint: obj.textFingerprint,
     });
     return raw;
   };
 
   /**
-   * The formatted snapshot text is the only part the model needs; `items` and
-   * the raw page text are kept host-side for ref resolution. Returning the
-   * whole payload here would send the page content to the LLM twice.
+   * Build the text the model sees. `items` and the raw page text stay host-side
+   * for ref resolution; the page text is only resent when it actually changed.
    */
-  const snapshotText = (raw: unknown): string => {
-    if (raw && typeof raw === "object" && "text" in raw) {
-      const text = (raw as { text?: unknown }).text;
-      if (typeof text === "string") return text;
+  const composeSnapshot = (
+    raw: SnapshotRaw,
+    previous: SnapshotBinding | null,
+    allowShortCircuit: boolean,
+  ): string => {
+    // Older payloads still carry a precomposed `text`; use it as-is.
+    if (typeof raw.text === "string" && raw.header === undefined) return raw.text;
+    if (
+      allowShortCircuit &&
+      previous?.fingerprint &&
+      raw.fingerprint &&
+      previous.fingerprint === raw.fingerprint
+    ) {
+      return "Page unchanged since the previous snapshot. Existing refs are still valid; do not re-snapshot unless you need to.";
     }
-    return typeof raw === "string" ? raw : JSON.stringify(raw);
+    const header = raw.header ?? "";
+    const interactive = raw.interactiveText ?? "";
+    const pageText = raw.pageText ?? "";
+    const textUnchanged = Boolean(
+      previous?.textFingerprint && raw.textFingerprint && previous.textFingerprint === raw.textFingerprint,
+    );
+    const parts = [header];
+    if (pageText) {
+      parts.push(textUnchanged ? "(Page text unchanged since the previous snapshot.)" : `Page text:\n${pageText}`);
+    }
+    parts.push(interactive);
+    return parts.filter(Boolean).join("\n\n");
+  };
+
+  /** Take a fresh snapshot, update the ref binding, and return model-facing text. */
+  const freshSnapshot = async (tabId: number, allowShortCircuit: boolean): Promise<string> => {
+    const previous = getSnapshot();
+    const raw = (await bridge.call("snapshot", { tabId })) as SnapshotRaw;
+    rememberSnapshot(raw, tabId);
+    return composeSnapshot(raw, previous, allowShortCircuit);
   };
 
   const resolveRef = async (ref: string, tabId: number) => {
@@ -234,9 +277,7 @@ export function createBrowserTools(opts: {
     }),
     execute: async (_id, params) => {
       const { tabId } = withTab(getTab(), params.tabId);
-      const raw = await bridge.call("snapshot", { tabId });
-      rememberSnapshot(raw, tabId);
-      return jsonResult(snapshotText(raw));
+      return jsonResult(await freshSnapshot(tabId, false));
     },
   });
 
@@ -258,9 +299,7 @@ export function createBrowserTools(opts: {
         if (!ok) return textResult("User denied this click.");
       }
       const clicked = await bridge.call("click", { tabId, ref: params.ref });
-      const raw = await bridge.call("snapshot", { tabId });
-      rememberSnapshot(raw, tabId);
-      return jsonResult({ clicked, snapshot: snapshotText(raw) });
+      return jsonResult({ clicked, snapshot: await freshSnapshot(tabId, true) });
     },
   });
 
@@ -292,9 +331,7 @@ export function createBrowserTools(opts: {
         text: params.text,
         pressEnter,
       });
-      const raw = await bridge.call("snapshot", { tabId });
-      rememberSnapshot(raw, tabId);
-      return jsonResult({ typed, snapshot: snapshotText(raw) });
+      return jsonResult({ typed, snapshot: await freshSnapshot(tabId, true) });
     },
   });
 
@@ -327,9 +364,7 @@ export function createBrowserTools(opts: {
     execute: async (_id, params) => {
       const { tabId } = withTab(getTab(), params.tabId);
       const scrolled = await bridge.call("scroll", { tabId, direction: params.direction });
-      const raw = await bridge.call("snapshot", { tabId });
-      rememberSnapshot(raw, tabId);
-      return jsonResult({ scrolled, snapshot: snapshotText(raw) });
+      return jsonResult({ scrolled, snapshot: await freshSnapshot(tabId, true) });
     },
   });
 
@@ -347,9 +382,7 @@ export function createBrowserTools(opts: {
         tabId,
         ms: Math.min(Math.max(params.ms ?? 1200, 0), 15_000),
       });
-      const raw = await bridge.call("snapshot", { tabId });
-      rememberSnapshot(raw, tabId);
-      return jsonResult({ waited, snapshot: snapshotText(raw) });
+      return jsonResult({ waited, snapshot: await freshSnapshot(tabId, true) });
     },
   });
 

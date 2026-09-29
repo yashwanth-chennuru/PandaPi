@@ -334,3 +334,111 @@ test("click on an unlabeled submit control still asks for approval", async () =>
   const text = result.content.map((c) => ("text" in c ? c.text : "")).join("");
   expect(text).toContain("denied");
 });
+
+function snapshotPayload(fingerprint: string, textFingerprint: string, pageText: string) {
+  return {
+    header: "T — https://example.test/checkout",
+    interactiveText: 'Interactive:\n[e1] button "Go"',
+    pageText,
+    fingerprint,
+    textFingerprint,
+    items: [{ ref: "e1", name: "Go", role: "button" }],
+    url: tab.url,
+    generation: "g2",
+  };
+}
+
+test("post-action snapshot short-circuits when the page is unchanged", async () => {
+  let snap: SnapshotBinding | null = {
+    tabId: 1,
+    url: tab.url,
+    generation: "g1",
+    items: [{ ref: "e1", name: "Go", role: "button" }],
+    fingerprint: "fp-same",
+    textFingerprint: "txt-same",
+  };
+  const tools = createBrowserTools({
+    getTab: () => tab,
+    bridge: {
+      async call(method) {
+        if (method === "describe") return { ok: true, name: "Go", tag: "button", url: tab.url };
+        if (method === "click") return { ok: true };
+        if (method === "snapshot") return snapshotPayload("fp-same", "txt-same", "PAGE TEXT");
+        return {};
+      },
+    },
+    requestApproval: async () => true,
+    getSnapshot: () => snap,
+    setSnapshot: (next) => {
+      snap = next;
+    },
+  });
+  const click = tools.find((t) => t.name === "click");
+  if (!click) throw new Error("missing click");
+  const result = await click.execute("t1", { ref: "e1" }, undefined, undefined, {} as never);
+  const text = result.content.map((c) => ("text" in c ? c.text : "")).join("");
+  expect(text).toContain("Page unchanged");
+  expect(text).not.toContain("PAGE TEXT");
+});
+
+test("snapshot omits unchanged page text but keeps the structure", async () => {
+  let snap: SnapshotBinding | null = {
+    tabId: 1,
+    url: tab.url,
+    generation: "g1",
+    items: [{ ref: "e1" }],
+    fingerprint: "fp-old",
+    textFingerprint: "txt-same",
+  };
+  const tools = createBrowserTools({
+    getTab: () => tab,
+    bridge: {
+      async call(method) {
+        if (method === "snapshot") return snapshotPayload("fp-new", "txt-same", "LONG PAGE TEXT");
+        return {};
+      },
+    },
+    requestApproval: async () => true,
+    getSnapshot: () => snap,
+    setSnapshot: (next) => {
+      snap = next;
+    },
+  });
+  const snapshot = tools.find((t) => t.name === "snapshot");
+  if (!snapshot) throw new Error("missing snapshot");
+  const result = await snapshot.execute("t1", {}, undefined, undefined, {} as never);
+  const text = result.content.map((c) => ("text" in c ? c.text : "")).join("");
+  expect(text).toContain("Interactive:");
+  expect(text).toContain("Page text unchanged");
+  expect(text).not.toContain("LONG PAGE TEXT");
+});
+
+test("snapshot includes page text when it changed", async () => {
+  let snap: SnapshotBinding | null = {
+    tabId: 1,
+    url: tab.url,
+    generation: "g1",
+    items: [{ ref: "e1" }],
+    fingerprint: "fp-old",
+    textFingerprint: "txt-old",
+  };
+  const tools = createBrowserTools({
+    getTab: () => tab,
+    bridge: {
+      async call(method) {
+        if (method === "snapshot") return snapshotPayload("fp-new", "txt-new", "BRAND NEW TEXT");
+        return {};
+      },
+    },
+    requestApproval: async () => true,
+    getSnapshot: () => snap,
+    setSnapshot: (next) => {
+      snap = next;
+    },
+  });
+  const snapshot = tools.find((t) => t.name === "snapshot");
+  if (!snapshot) throw new Error("missing snapshot");
+  const result = await snapshot.execute("t1", {}, undefined, undefined, {} as never);
+  const text = result.content.map((c) => ("text" in c ? c.text : "")).join("");
+  expect(text).toContain("BRAND NEW TEXT");
+});

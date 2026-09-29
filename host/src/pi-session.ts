@@ -16,6 +16,7 @@ import {
   seedFromEnv,
   writeLlmConfig,
   readLlmConfig,
+  resolveCacheRetention,
   publicConfig,
   PROVIDER_ID,
   type LlmConfig,
@@ -84,6 +85,10 @@ export async function createPiController(opts: {
   requestApproval: ApprovalFn;
 }): Promise<PiController> {
   const { bridge, requestApproval } = opts;
+  // Prompt caching: keep Pi's "short" default unless the user opted into
+  // "long" retention (some endpoints reject the retention field).
+  const cacheRetention = resolveCacheRetention();
+  if (cacheRetention) process.env.PI_CACHE_RETENTION = cacheRetention;
   const home = ensureHome(pandapiHome());
   let cfg = seedFromEnv(home) ?? readLlmConfig(home);
   if (cfg) writeLlmConfig(cfg, home);

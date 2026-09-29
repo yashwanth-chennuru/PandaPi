@@ -20,6 +20,13 @@ export function runPageAction(action, arg1, arg2, arg3) {
     refMap().clear();
   }
 
+  /** Cheap stable hash so the host can tell whether a page actually changed. */
+  function hash(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }
+
   function walkRoots(visit) {
     visit(document);
     try {
@@ -156,14 +163,9 @@ export function runPageAction(action, arg1, arg2, arg3) {
     const url = location.href;
     const generation = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const pageText = visibleText(document, 6000);
-    const lines = [`${title} — ${url}`, ""];
-    if (pageText) {
-      lines.push("Page text:");
-      lines.push(pageText);
-      lines.push("");
-    }
-    lines.push("Interactive:");
+    const header = `${title} — ${url}`;
     const shown = items.slice(0, 220);
+    const lines = ["Interactive:"];
     for (const it of shown) {
       const bits = [`[${it.ref}]`, it.role];
       if (it.type) bits.push(it.type);
@@ -173,13 +175,20 @@ export function runPageAction(action, arg1, arg2, arg3) {
       lines.push(bits.join(" "));
     }
     if (items.length > shown.length) lines.push(`… ${items.length - shown.length} more truncated`);
+    const interactiveText = lines.join("\n");
     return {
       title,
       url,
       generation,
+      // Whole-page fingerprint (structure + text) and text-only fingerprint, so
+      // the host can skip resending content the model already has.
+      fingerprint: hash(`${header}\n${pageText}\n${interactiveText}`),
+      textFingerprint: hash(pageText),
       count: items.length,
       items: shown,
-      text: lines.join("\n"),
+      header,
+      pageText,
+      interactiveText,
     };
   }
 

@@ -68,3 +68,11 @@ test("host serializes control messages and clears stale approvals", () => {
   expect(src).toMatch(/msg\.type === "set_model"[\s\S]*?enqueuePrompt/);
   expect(src).toMatch(/msg\.type === "set_config"[\s\S]*?enqueuePrompt/);
 });
+
+test("page-actions emits fingerprints for change detection", () => {
+  const src = readFileSync(path.join(ext, "page-actions.js"), "utf8");
+  expect(src).toContain("fingerprint:");
+  expect(src).toContain("textFingerprint:");
+  expect(src).toContain("interactiveText");
+  expect(src).toContain("function hash");
+});
