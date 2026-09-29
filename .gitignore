@@ -7,3 +7,8 @@ extension/key.pem
 package-lock.json
 scripts/pandapi-host.sh
 scripts/pandapi-host.cmd
+
+# Local code-review notes — never committed
+REVIEW.md
+Review.md
+review.md
