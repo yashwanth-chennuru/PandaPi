@@ -85,6 +85,16 @@ export function seedFromEnv(home = pandapiHome()): LlmConfig | null {
 export function writeLlmConfig(cfg: LlmConfig, home = pandapiHome()): void {
   ensureHome(home);
   const file = modelsPath(home);
+  const model: Record<string, unknown> = {
+    id: cfg.modelId,
+    name: cfg.modelId,
+    reasoning: false,
+    input: ["text", "image"],
+    contextWindow: 128000,
+    maxTokens: 8192,
+  };
+  const promptCache = resolvePromptCache();
+  if (promptCache) model.promptCache = promptCache;
   const payload = {
     providers: {
       [PROVIDER_ID]: {
@@ -100,16 +110,7 @@ export function writeLlmConfig(cfg: LlmConfig, home = pandapiHome()): void {
           supportsStrictMode: false,
           maxTokensField: "max_tokens",
         },
-        models: [
-          {
-            id: cfg.modelId,
-            name: cfg.modelId,
-            reasoning: false,
-            input: ["text", "image"],
-            contextWindow: 128000,
-            maxTokens: 8192,
-          },
-        ],
+        models: [model],
       },
     },
   };
@@ -132,6 +133,25 @@ export function resolveCacheRetention(
   if (requested === "long") return "long";
   if (requested === "short") return "short";
   return undefined;
+}
+
+/**
+ * Best-effort prompt cache lifetime for the custom model, in seconds.
+ *
+ * Pi 1.0's cache warming only applies to models that declare a lifetime, and
+ * an unknown endpoint's TTL must not be guessed, so this stays opt-in:
+ * `PANDAPI_CACHE_LIFETIME=short:300` or `PANDAPI_CACHE_LIFETIME=long:3600`.
+ */
+export function resolvePromptCache(
+  env: NodeJS.ProcessEnv = process.env,
+): { short?: number; long?: number } | undefined {
+  const raw = env.PANDAPI_CACHE_LIFETIME?.trim();
+  if (!raw) return undefined;
+  const [tier, secondsRaw] = raw.includes(":") ? raw.split(":") : ["short", raw];
+  if (tier !== "short" && tier !== "long") return undefined;
+  const seconds = Number(secondsRaw);
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  return { [tier]: Math.round(seconds) };
 }
 
 export function publicConfig(cfg: LlmConfig | null): {

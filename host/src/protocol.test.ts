@@ -7,6 +7,7 @@ import {
   readLlmConfig,
   publicConfig,
   resolveCacheRetention,
+  resolvePromptCache,
   PROVIDER_ID,
   ensureHome,
 } from "./config.ts";
@@ -111,6 +112,43 @@ test("resolveCacheRetention is opt-in and defaults to Pi's short cache", () => {
   expect(resolveCacheRetention({ PANDAPI_CACHE_RETENTION: "SHORT" })).toBe("short");
   expect(resolveCacheRetention({ PI_CACHE_RETENTION: "long" })).toBe("long");
   expect(resolveCacheRetention({ PANDAPI_CACHE_RETENTION: "nonsense" })).toBeUndefined();
+});
+
+test("resolvePromptCache parses tier:seconds and rejects junk", () => {
+  expect(resolvePromptCache({})).toBeUndefined();
+  expect(resolvePromptCache({ PANDAPI_CACHE_LIFETIME: "300" })).toEqual({ short: 300 });
+  expect(resolvePromptCache({ PANDAPI_CACHE_LIFETIME: "short:300" })).toEqual({ short: 300 });
+  expect(resolvePromptCache({ PANDAPI_CACHE_LIFETIME: "long:3600" })).toEqual({ long: 3600 });
+  expect(resolvePromptCache({ PANDAPI_CACHE_LIFETIME: "forever:10" })).toBeUndefined();
+  expect(resolvePromptCache({ PANDAPI_CACHE_LIFETIME: "short:abc" })).toBeUndefined();
+  expect(resolvePromptCache({ PANDAPI_CACHE_LIFETIME: "short:-5" })).toBeUndefined();
+});
+
+test("writeLlmConfig only declares promptCache when opted in", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "pandapi-cache-"));
+  const previous = process.env.PANDAPI_CACHE_LIFETIME;
+  try {
+    const cfg = {
+      providerId: PROVIDER_ID,
+      baseUrl: "https://example.test/v1",
+      apiKey: "sk-test-key-123456",
+      modelId: "m",
+    };
+    delete process.env.PANDAPI_CACHE_LIFETIME;
+    writeLlmConfig(cfg, dir);
+    type ModelsJson = { providers: { compat: { models: Array<{ promptCache?: unknown }> } } };
+    let raw = JSON.parse(readFileSync(path.join(dir, "models.json"), "utf8")) as ModelsJson;
+    expect(raw.providers.compat.models[0].promptCache).toBeUndefined();
+
+    process.env.PANDAPI_CACHE_LIFETIME = "short:300";
+    writeLlmConfig(cfg, dir);
+    raw = JSON.parse(readFileSync(path.join(dir, "models.json"), "utf8")) as ModelsJson;
+    expect(raw.providers.compat.models[0].promptCache).toEqual({ short: 300 });
+  } finally {
+    if (previous === undefined) delete process.env.PANDAPI_CACHE_LIFETIME;
+    else process.env.PANDAPI_CACHE_LIFETIME = previous;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("isolated config writes under PANDAPI_HOME not ~/.pi", () => {

@@ -9,6 +9,8 @@ type Hello = {
   type: string;
   llm?: { hasKey?: boolean; baseUrl?: string; modelId?: string };
   warning?: string;
+  piReady?: boolean;
+  model?: { provider: string; id: string } | null;
 };
 
 function helloReader(proc: ReturnType<typeof spawn>) {
@@ -86,6 +88,9 @@ test("second hello still has the saved key and base URL", async () => {
     const afterSave = await hellos.next();
     expect(afterSave.llm?.hasKey).toBe(true);
     expect(afterSave.llm?.baseUrl).toBe("https://example.test/v1");
+    // The custom "compat" provider must actually build a session (Pi 1.x).
+    expect(afterSave.piReady).toBe(true);
+    expect(afterSave.model).toEqual({ provider: "compat", id: "gpt-test" });
     proc.stdin.write(encodeNativeMessage({ type: "hello" }));
     const again = await hellos.next();
     expect(again.type).toBe("hello_ok");

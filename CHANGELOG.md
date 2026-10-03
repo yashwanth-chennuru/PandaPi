@@ -5,6 +5,23 @@ All notable changes to PandaPi are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.0 - 2026-10-03
+
+### Changed
+
+- Upgraded the embedded Pi SDK to `1.0.0` (from `0.84.4`). The SDK surface this
+  project uses is unchanged: typecheck, lint, the host boot test, and all tests
+  pass on 1.0.0, and the custom `compat` provider still builds a session.
+
+### Added
+
+- `PANDAPI_CACHE_LIFETIME` (`short:300` / `long:3600`) declares the endpoint's
+  best-effort prompt-cache lifetime so Pi 1.0 can keep the cache warm during
+  long tool runs. Opt-in, because the TTL of an arbitrary OpenAI-compatible
+  endpoint must not be guessed.
+- Host test asserting the custom provider reports `piReady` with the configured
+  model after `set_config`, as regression coverage for the Pi 1.x upgrade.
+
 ## 0.4.0 - 2026-09-29
 
 First public release, MIT licensed.
